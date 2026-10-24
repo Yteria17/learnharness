@@ -37,6 +37,7 @@ test('only learning data is uploaded; credentials, logs, and jobs stay local', a
   put(directory, 'chats/chat_1.json', '{"messages":[]}');
   put(directory, 'auth.json', 'secret');
   put(directory, 'chatgpt-credentials.enc.json', 'secret');
+  put(directory, 'chatgpt-credentials.json', 'secret');
   put(directory, 'jobs/pending.json', '{}');
   put(directory, 'debug/events.jsonl', 'private');
   const result = await synchronize({ host: 'test', directory, transport: server.transport });

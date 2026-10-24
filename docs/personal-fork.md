@@ -46,3 +46,17 @@ Le code, les identifiants et le LaTeX ne doivent pas être traduits par les agen
 Le bouton « Try again » de #35 n’est pas repris : il faisait partie d’une contribution
 distincte de celle de la langue, et ses effets sur les tâches et le graphe nécessitent
 un travail séparé.
+
+## Mise à jour amont 0.3.6
+
+Tous les changements du dépôt d’origine jusqu’au commit c549494 sont intégrés :
+réduction du contexte alignée sur Pi, mesures natives du contexte et des coûts,
+préservation des coûts inconnus, distinction entre IPC du serveur de développement
+et connexion desktop, tests de reconnexion déterministes et version 0.3.6.
+
+Le stockage ChatGPT suit désormais l’amont : `chatgpt-credentials.json`, dans le
+profil local de l’app, est un JSON non chiffré avec les permissions du système.
+L’ancien fichier `chatgpt-credentials.enc.json` est conservé mais n’est ni importé
+ni déchiffré automatiquement. Une reconnexion est nécessaire sur chaque ordinateur
+mis à jour depuis notre version chiffrée. Ces deux fichiers et les clés API restent
+exclus des transferts SSH. Les conversations et préférences sont conservées.

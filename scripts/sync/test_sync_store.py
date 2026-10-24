@@ -36,7 +36,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(list((self.root / "history").glob("*.json"))), 2)
 
     def test_malformed_paths_and_credentials_are_rejected(self):
-        for name in ["../auth.json", "auth.json", "graph/../../x", "chats/a/../b.json", "jobs/x.json", "chatgpt-credentials.enc.json"]:
+        for name in ["../auth.json", "auth.json", "graph/../../x", "chats/a/../b.json", "jobs/x.json", "chatgpt-credentials.enc.json", "chatgpt-credentials.json"]:
             with self.assertRaises(ValueError):
                 self.request(op="put", expected=None, files={name: "e30="})
         self.assertIsNone(self.request(op="get")["revision"])
