@@ -231,7 +231,7 @@ export const ROLE_SLOT: Readonly<Record<ModelRole, ModelSlotName>> = {
 /** The languages the agents can be told to speak (language wave,
  *  2026-10-24). Prompts stay English; a directive appended at composition
  *  (src/agent/language.ts) steers the user-visible output. */
-export const OUTPUT_LANGUAGES = ["pt-BR", "en"] as const;
+export const OUTPUT_LANGUAGES = ["fr", "en", "pt-BR"] as const;
 export type OutputLanguage = (typeof OUTPUT_LANGUAGES)[number];
 
 /** General settings — app-level behavior. Version DISPLAY and plans login
@@ -239,7 +239,7 @@ export type OutputLanguage = (typeof OUTPUT_LANGUAGES)[number];
 export interface GeneralSettings {
 	/** Auto-update the app (default ON). Mechanism ships in a later wave. */
 	autoUpdate?: boolean;
-	/** Language of everything the agents write for the user (default pt-BR). */
+	/** Language of everything the agents write for the user (default French). */
 	language?: OutputLanguage;
 }
 
@@ -404,7 +404,7 @@ export interface FactorySettings {
 
 export const FACTORY_SETTINGS: FactorySettings = {
 	version: CURRENT_SETTINGS_VERSION,
-	general: { autoUpdate: true, language: "pt-BR" },
+	general: { autoUpdate: true, language: "fr" },
 	appearance: {
 		mode: "dark",
 		background: null, // the dark default (#141414) lives in the mode's derivation curve

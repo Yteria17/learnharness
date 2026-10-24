@@ -94,6 +94,6 @@ export function SyncSection() {
 		{saved && <p role="status">Saved on this computer.{enabled ? " Live synchronization is enabled." : " Automatic synchronization is disabled."}</p>}
 		<p role="status" data-testid="sync-status">{syncStatusLabel(status)}</p>
 		{(error || readError || status.message) && <p role="alert" className="whitespace-pre-wrap break-words text-amber-500">{error || readError || status.message}</p>}
-		<p className="leading-relaxed text-muted-foreground">You can work offline; transfers retry automatically. Changes to separate sessions are merged. Concurrent edits to the same session are preserved and reported as a conflict. Conversations, exercises, graph and nonsecret preferences are shared. Original documents stored elsewhere are not transferred.</p>
+		<p className="leading-relaxed text-muted-foreground">You can work offline; transfers retry automatically. Changes to separate sessions are merged. Concurrent edits to the same session are preserved and reported as a conflict. Conversations, exercises, graph and nonsecret preferences are shared. Saved screenshots travel with their conversations. The shared profile is limited to 64 MiB. Original documents stored elsewhere are not transferred.</p>
 	</div>;
 }

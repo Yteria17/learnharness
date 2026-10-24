@@ -13,6 +13,11 @@
 import type { OutputLanguage } from "../core/settings.ts";
 
 const DIRECTIVES: Record<OutputLanguage, string> = {
+	fr: `## Langue des contenus
+
+Rédige en français tout ce que l'apprenant lit : réponses, questions, énoncés, choix et explications des quiz, exercices et corrections, plans et titres, noms et descriptions des notions du graphe, titres des séances, légendes des schémas et démonstrations, synthèses et résumés. Emploie un français naturel et une terminologie cohérente. Réponds en français même si les documents étudiés sont dans une autre langue, sauf demande explicite contraire de l'apprenant.
+
+Conserve les noms des outils, champs et valeurs techniques attendus, chemins de fichiers, code, identifiants et expressions LaTeX. Ne traduis pas les valeurs imposées par un schéma. Cite les sources dans leur langue d'origine puis explique-les en français.`,
 	"pt-BR": `## Language
 
 Write everything the learner will read in Brazilian Portuguese (pt-BR): replies, questions, quiz and ask_user_question text (prompts, options, explanations), practice problems and verdicts, plans and their titles, knowledge-graph node names and descriptions, session names, diagram and demo labels, research briefs, and summaries. Use natural Brazilian wording, not literal translation. If the learner writes in another language, still answer in pt-BR unless they explicitly ask otherwise.

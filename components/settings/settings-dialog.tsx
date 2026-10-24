@@ -385,12 +385,12 @@ export function SettingsDialogBody({
 										/>
 									</SettingsRow>
 									<SettingsRow
-										label="Language"
+										label="Response language"
 										hint={LANGUAGE_HINT}
 										testid="row-language"
 									>
 										<ThinSelect
-											value={record.general?.language ?? "pt-BR"}
+											value={record.general?.language ?? "fr"}
 											ariaLabel="language"
 											testid="select-language"
 											onChange={(language) =>
@@ -400,6 +400,7 @@ export function SettingsDialogBody({
 												})
 											}
 										>
+											<option value="fr">Français</option>
 											<option value="pt-BR">Português (Brasil)</option>
 											<option value="en">English</option>
 										</ThinSelect>

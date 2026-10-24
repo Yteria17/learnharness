@@ -272,6 +272,20 @@ after(() => {
 });
 
 describe("teacher chat flow (scripted model)", () => {
+	it("the real chat handler passes the French setting into the agent prompt", async () => {
+		const chat = createConfiguredChat("Test: French output");
+		createdChats.push(chat.id);
+		const faux = createFauxCore({});
+		let prompt = "";
+		faux.setResponses([(ctx) => { prompt = JSON.stringify(ctx.messages.filter((message) => message.role === "system")); return fauxAssistantMessage([fauxText("Bonjour")]); }]);
+		await drainTurn(post(chat.id, { type: "text", text: "Explique la gravité" }), (opts) => {
+			assert.equal(opts.language, "fr");
+			return createTeacherAgent(undefined, { ...opts, engine: { model: faux.getModel(), streamFn: faux.streamSimple } });
+		});
+		assert.match(prompt, /Rédige en français/);
+		assert.equal(chatStore.getChat(chat.id)!.messages.at(-1)?.role, "assistant");
+	});
+
 	it("quiz tool call persists as a pending part; the answer continues the lesson", async () => {
 		const { engine, calls } = scriptedTeacher(defaultLesson);
 		const chat = createConfiguredChat("Test: solar system");

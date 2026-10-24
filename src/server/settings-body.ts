@@ -75,7 +75,7 @@ function asRecord(body: unknown): Record<string, unknown> | null {
 	return body as Record<string, unknown>;
 }
 
-/** general: { autoUpdate?: boolean, language?: "pt-BR" | "en" } */
+/** general: { autoUpdate?: boolean, language?: "fr" | "pt-BR" | "en" } */
 export function parseGeneralSettingsBody(body: unknown): SettingsBodyResult<GeneralSettings> {
 	const raw = asRecord(body);
 	if (!raw) return { ok: false, error: "Invalid JSON body" };

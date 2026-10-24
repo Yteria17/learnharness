@@ -67,7 +67,7 @@ async function openSession(title) {
 	});
 	const { id } = await res.json();
 	created.push(id);
-	await page.goto(`${BASE}/chat/${id}`, { waitUntil: "domcontentloaded" });
+	await page.goto(`${BASE}/chat/${id}`, { waitUntil: "networkidle2" });
 	await page.waitForSelector('[data-testid="composer"] textarea');
 	return id;
 }
@@ -122,7 +122,7 @@ after(async () => {
 
 describe("composer image paste (e2e)", () => {
 	it("home: paste drafts a preview whose remove cross sits at the top-right", async () => {
-		await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+		await page.goto(`${BASE}/`, { waitUntil: "networkidle2" });
 		await page.waitForSelector("textarea");
 		assert.equal((await pasteFiles("textarea", [{ type: "image/png", data: PNG }])).handled, true);
 		await page.waitForSelector('[data-testid="composer-images"] img');
@@ -172,7 +172,7 @@ describe("composer image paste (e2e)", () => {
 		await page.keyboard.press("Enter");
 		await page.waitForSelector('[data-testid="user-image"]', { timeout: 20_000 });
 		assert.equal(await thumbs(), 0, "the draft clears on send");
-		await page.reload({ waitUntil: "domcontentloaded" });
+		await page.reload({ waitUntil: "networkidle2" });
 		await page.waitForSelector('[data-testid="user-image"]', { timeout: 20_000 });
 		await page.click('[data-testid="user-image"]');
 		await page.waitForSelector('[data-testid="image-lightbox"] img', { timeout: 20_000 });
@@ -180,7 +180,7 @@ describe("composer image paste (e2e)", () => {
 	});
 
 	it("home: an image-only first message opens the new session with the picture in it", async () => {
-		await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+		await page.goto(`${BASE}/`, { waitUntil: "networkidle2" });
 		await page.waitForSelector("textarea");
 		await pasteFiles("textarea", [{ type: "image/png", data: PNG }]);
 		await page.waitForSelector('[data-testid="composer-images"] img');
@@ -196,7 +196,7 @@ describe("composer image paste (e2e)", () => {
 	});
 
 	it("draft: /chat/new sends the first image the same way", async () => {
-		await page.goto(`${BASE}/chat/new`, { waitUntil: "domcontentloaded" });
+		await page.goto(`${BASE}/chat/new`, { waitUntil: "networkidle2" });
 		await page.waitForSelector('[data-testid="composer"] textarea');
 		await pasteFiles('[data-testid="composer"] textarea', [{ type: "image/png", data: PNG }]);
 		await page.waitForSelector('[data-testid="composer-images"] img');
@@ -205,6 +205,25 @@ describe("composer image paste (e2e)", () => {
 		const id = new URL(page.url()).pathname.split("/").pop();
 		if (id) created.push(id);
 		await page.waitForSelector('[data-testid="user-image"]', { timeout: 20_000 });
+	});
+
+	it("the French response language can be changed, saved and restored in Settings", async () => {
+		await page.goto(`${BASE}/`, { waitUntil: "networkidle2" });
+		await page.waitForSelector('[data-testid="settings-entry"]');
+		await page.click('[data-testid="settings-entry"]');
+		await page.waitForSelector('[data-testid="settings-nav-general"]');
+		await page.click('[data-testid="settings-nav-general"]');
+		await page.waitForSelector('[data-testid="select-language"]');
+		assert.equal(await page.$eval('[data-testid="select-language"]', (el) => el.value), "fr");
+		const saved = page.waitForResponse((response) => response.url() === `${BASE}/api/settings/general` && response.request().method() === "PUT");
+		await page.select('[data-testid="select-language"]', "en");
+		assert.equal((await saved).status(), 200);
+		const settings = await (await fetch(`${BASE}/api/settings`)).json();
+		assert.equal(settings.settings.general.language, "en");
+		const restored = page.waitForResponse((response) => response.url() === `${BASE}/api/settings/general` && response.request().method() === "PUT");
+		await page.select('[data-testid="select-language"]', "fr");
+		assert.equal((await restored).status(), 200);
+		await page.keyboard.press("Escape");
 	});
 
 	it("the server refuses a malformed image with a 400 over real HTTP", async () => {
