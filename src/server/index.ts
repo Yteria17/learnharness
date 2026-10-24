@@ -43,5 +43,7 @@ export * from "./compaction.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";
 export * from "./model-catalog.ts";
-export { withSyncMutation, liveSyncSnapshot, liveSyncApply, liveSyncBusy } from "./live-sync.ts";
+export { withSyncMutation, liveSyncSnapshot, liveSyncApply, liveSyncBusy, liveSyncCommit, stageSyncFiles, discardSyncStage } from "./live-sync.ts";
 export { sessionCost } from "./pricing.ts";
+
+export * from "./documents.ts";

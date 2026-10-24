@@ -53,3 +53,12 @@ export function liveSyncApply(files: Record<string, string>, expected: string) {
 	emit("activity-changed", {});
 	return { backup };
 }
+
+export { stageSyncFiles, discardSyncStage } from "../store/sync.ts";
+import { stagedSyncFiles, discardSyncStage } from "../store/sync.ts";
+export function liveSyncCommit(transaction: string, manifest: Record<string, {hash: string; size: number}>, expected: string) {
+ const files = stagedSyncFiles(transaction, manifest, expected);
+ const result = liveSyncApply(files, expected);
+ discardSyncStage(transaction);
+ return result;
+}

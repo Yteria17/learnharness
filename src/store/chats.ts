@@ -8,6 +8,7 @@
  */
 
 import * as fs from "node:fs";
+import { storeImages, hydrateImages } from "./attachments.ts";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
@@ -55,10 +56,10 @@ function createChat(title: string, kind?: "practice"): ChatRecord {
  *  lazy migration means existing files only get stamped on their next write.
  *  A future-version guard lives on the read side (getChat). */
 function writeChat(record: ChatRecord): void {
-	fs.writeFileSync(chatFile(record.id), JSON.stringify({ ...record, version: CURRENT_CHAT_VERSION }, null, "\t"), "utf-8");
+	fs.writeFileSync(chatFile(record.id), JSON.stringify(storeImages({ ...record, version: CURRENT_CHAT_VERSION }), null, "\t"), "utf-8");
 }
 
-function getChat(id: string): ChatRecord | null {
+function getChat(id: string, hydrate = true): ChatRecord | null {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(fs.readFileSync(chatFile(id), "utf-8"));
@@ -73,7 +74,7 @@ function getChat(id: string): ChatRecord | null {
 		console.error(`[chat ${id}] record stamped with schema version ${v} > ${CURRENT_CHAT_VERSION} — this app build is older; refusing to read it`);
 		return null;
 	}
-	return parsed as ChatRecord;
+	return hydrate ? hydrateImages(parsed as ChatRecord) : parsed as ChatRecord;
 }
 
 function listChats(): ChatSummary[] {
@@ -82,7 +83,7 @@ function listChats(): ChatSummary[] {
 		return fs
 			.readdirSync(PATHS.chats)
 			.filter((f) => f.endsWith(".json"))
-			.map((f) => getChat(f.slice(0, -5)))
+			.map((f) => { try { return getChat(f.slice(0, -5), false); } catch { return null; } })
 			.filter((r): r is ChatRecord => r !== null)
 			.map(({ messages, tree, turns, extractions, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the

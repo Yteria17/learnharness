@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-	// Image messages and 64 MiB profile imports expand in base64. Next's
+	// Image messages and bounded attachment batches expand in base64. Next's
 	// default 10 MiB proxy buffer truncates those requests before the route
 	// validates them; match the bounded SSH wire envelope instead.
 	experimental: { proxyClientMaxBodySize: 96 * 1024 * 1024 },

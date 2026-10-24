@@ -64,15 +64,19 @@ owners' locks remain untouched.
 ## Data and credentials
 
 Shared: conversations and practice transcripts, graph ledgers and layout,
-nonsecret settings and custom prompt Markdown. External original documents,
-logs, caches and active job files do not transfer. ChatGPT credentials and SSH
+nonsecret settings, custom prompt Markdown, screenshot attachments and documents
+explicitly added to the library (including originals of new notes imports).
+Other external files, logs, caches and active job files do not transfer. ChatGPT credentials and SSH
 private keys stay on each computer. Connect ChatGPT separately on each device.
 
 `desktop-sync.json` stores this computer's host, enable flag and last success.
 `ssh-sync-state.json` stores its last acknowledged revision and file checkpoint.
 Neither file is included in the learning snapshot. SSH encrypts transit; the VPS
 stores snapshots under its user's filesystem permissions, without separate
-at-rest encryption. Snapshot size is limited to 64 MiB and 20,000 files.
+at-rest encryption. The shared profile is limited to 1 GiB, 50 MiB per file and 20,000 files.
+Protocol v2 transfers only changed files in bounded batches. New server histories
+are manifests referencing immutable content-addressed objects; v1 histories remain intact.
+All computers must upgrade to 0.3.7-fork.1 before using a v2 profile.
 
 Every accepted server revision is retained; each local import keeps the previous
 profile in `sync-backups/`. No automatic retention pruning is performed. Include

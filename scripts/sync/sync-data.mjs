@@ -8,30 +8,89 @@ import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const MAX_DATA = 64 * 1024 * 1024;
+const MAX_DATA = 1024 * 1024 * 1024;
+const MAX_FILE = 50 * 1024 * 1024;
 const GRAPH = new Set(['nodes.jsonl', 'chains.jsonl', 'sessions.jsonl', 'coverage.jsonl', 'sources.json', 'positions.json', 'render-settings.json', 'format.json']);
 export function allowed(name) {
   return typeof name === 'string' && name.length <= 240 && (name === 'settings.json'
+    || /^attachments\/[a-f0-9]{64}\.bin$/.test(name) || /^documents\/[a-f0-9]{64}\.json$/.test(name)
     || /^chats\/[A-Za-z0-9_-]+\.json$/.test(name)
     || (name.startsWith('graph/') && GRAPH.has(name.slice(6)))
     || /^prompts\/(?:[a-z][a-z0-9_-]*\/)?[A-Za-z0-9_-]+\.md$/.test(name));
 }
-export function revisionOf(files) {
+export function manifestOf(files) {
   if (!files || typeof files !== 'object' || Array.isArray(files) || Object.keys(files).length > 20000) throw new Error('Invalid file map');
   let size = 0;
-  const canonical = Object.create(null);
+  const manifest = Object.create(null);
   for (const name of Object.keys(files).sort()) {
     const content = files[name];
     if (!allowed(name) || typeof content !== 'string') throw new Error('Unsupported sync file');
     const data = Buffer.from(content, 'base64');
     if (data.toString('base64') !== content) throw new Error('Invalid base64');
     size += data.length;
-    if (size > MAX_DATA) throw new Error('Snapshot exceeds 64 MiB');
-    canonical[name] = content;
+    if (data.length > MAX_FILE) throw new Error('File exceeds 50 MiB');
+    if (size > MAX_DATA) throw new Error('Profile exceeds 1 GiB');
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
+    if (name.startsWith('attachments/') && name !== `attachments/${hash}.bin`) throw new Error('Attachment integrity check failed');
+    manifest[name] = { hash, size: data.length };
   }
-  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  return manifest;
+}
+export function revisionOf(files) {
+  return crypto.createHash('sha256').update(JSON.stringify(manifestOf(files))).digest('hex');
+}
+
+/** Upgrade inline screenshots once. Keep the pre-migration record locally. */
+export function migrateImages(directory) {
+  const chats = path.join(directory, 'chats');
+  if (!fs.existsSync(chats) || fs.lstatSync(chats).isSymbolicLink()) return;
+  const convert = (value) => {
+    if (Array.isArray(value)) return value.map(convert);
+    if (!value || typeof value !== 'object') return value;
+    if (value.type === 'image' && typeof value.mimeType === 'string' && typeof value.data === 'string' && value.data && Buffer.from(value.data, 'base64').toString('base64') === value.data) {
+      const bytes = Buffer.from(value.data, 'base64');
+      const id = crypto.createHash('sha256').update(bytes).digest('hex');
+      const target = path.join(directory, 'attachments', id + '.bin');
+      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+      if (fs.lstatSync(path.dirname(target)).isSymbolicLink()) throw new Error('Symlinks are not supported');
+      if (!fs.existsSync(target)) fs.writeFileSync(target, bytes, { flag: 'wx', mode: 0o600 });
+      const { data, ...rest } = value;
+      return { ...rest, attachmentId: id };
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, convert(item)]));
+  };
+  for (const name of fs.readdirSync(chats).sort()) {
+    if (!/^[A-Za-z0-9_-]+\.json$/.test(name)) continue;
+    const file = path.join(chats, name);
+    if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Symlinks are not supported');
+    const original = fs.readFileSync(file, 'utf8');
+    let record;
+    try { record = JSON.parse(original); } catch { continue; }
+    if (!record || typeof record !== 'object' || (record.version ?? 1) > 2) continue;
+    const migrated = convert(record);
+    if (JSON.stringify(record) === JSON.stringify(migrated)) continue;
+    migrated.version = 2;
+    const backup = path.join(path.dirname(directory), 'attachment-migration-backups', crypto.createHash('sha256').update(original).digest('hex') + '.json');
+    fs.mkdirSync(path.dirname(backup), { recursive: true, mode: 0o700 });
+    if (!fs.existsSync(backup)) fs.writeFileSync(backup, original, { flag: 'wx', mode: 0o600 });
+    atomicJSON(file, migrated);
+  }
+}
+function assertReferences(files) {
+  const check = value => {
+    if (Array.isArray(value)) { value.forEach(check); return; }
+    if (!value || typeof value !== 'object') return;
+    if (typeof value.attachmentId === 'string' && (!/^[a-f0-9]{64}$/.test(value.attachmentId) || files[`attachments/${value.attachmentId}.bin`] === undefined)) throw new Error('Missing attachment: ' + value.attachmentId);
+    Object.values(value).forEach(check);
+  };
+  for (const [name, value] of Object.entries(files)) {
+    if (!name.startsWith('chats/') && !name.startsWith('documents/')) continue;
+    let parsed; try { parsed = JSON.parse(Buffer.from(value, 'base64').toString('utf8')); } catch { continue; }
+    check(parsed);
+  }
 }
 export function snapshot(directory) {
+  migrateImages(directory);
   const files = Object.create(null);
   function walk(current, prefix = '') {
     if (!fs.existsSync(current)) return;
@@ -39,7 +98,7 @@ export function snapshot(directory) {
     for (const item of fs.readdirSync(current, { withFileTypes: true })) {
       const name = prefix + item.name;
       const absolute = path.join(current, item.name);
-      const relevant = allowed(name) || ['chats', 'graph', 'prompts'].includes(name) || /^prompts\/[a-z][a-z0-9_-]*$/.test(name);
+      const relevant = allowed(name) || ['chats', 'graph', 'prompts', 'attachments', 'documents'].includes(name) || /^prompts\/[a-z][a-z0-9_-]*$/.test(name);
       if (!relevant) continue;
       if (item.isSymbolicLink()) throw new Error('Symlinks are not supported in the sync profile');
       if (item.isDirectory()) walk(absolute, name + '/');
@@ -47,6 +106,7 @@ export function snapshot(directory) {
     }
   }
   walk(directory);
+  assertReferences(files);
   return { files, revision: revisionOf(files) };
 }
 export function defaultDataDirectory() {
@@ -82,7 +142,7 @@ export function remote(host, request) {
         resolve(result);
       } catch (error) { reject(Object.assign(new Error(`SSH sync failed: ${Buffer.concat(err).toString().trim() || error.message}`), { code: error.code })); }
     });
-    child.stdin.end(JSON.stringify({ version: 1, ...request }));
+    child.stdin.end(JSON.stringify({ version: 2, ...request }));
   });
 }
 function atomicJSON(file, data) {
@@ -93,6 +153,7 @@ function atomicJSON(file, data) {
 }
 export function applySnapshot(directory, files, expectedLocal, ensureClosed = assertAppClosed) {
   revisionOf(files);
+  assertReferences(files);
   if (snapshot(directory).revision !== expectedLocal) throw new Error('Local data changed during synchronization; nothing was replaced.');
   const parent = path.dirname(directory);
   fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -189,6 +250,29 @@ export function mergeSnapshots(base, local, remote) {
   return { files, revision: revisionOf(files) };
 }
 
+function batches(names, manifest) {
+  const result = []; let batch = [], size = 0;
+  for (const name of names) {
+    if (batch.length && size + manifest[name].size > 32 * 1024 * 1024) { result.push(batch); batch = []; size = 0; }
+    batch.push(name); size += manifest[name].size;
+  }
+  if (batch.length) result.push(batch);
+  return result;
+}
+
+/** Transfer only changed files over the local desktop API too (96 MiB proxy cap). */
+export async function installLiveSnapshot(files, expected, previous, request) {
+  const transaction = crypto.randomUUID();
+  const manifest = manifestOf(files);
+  const changed = Object.keys(files).filter(name => files[name] !== previous[name]);
+  try {
+    for (const names of batches(changed, manifest)) {
+      await request({ op: 'stage', transaction, files: Object.fromEntries(names.map(name => [name, files[name]])) });
+    }
+    return await request({ op: 'commit', transaction, manifest, expected });
+  } finally { await request({ op: 'discard', transaction }).catch(() => {}); }
+}
+
 async function synchronizeUnlocked({ host, directory, statusOnly = false, transport = remote, ensureClosed = assertAppClosed,
   capture = async () => snapshot(directory), install = async (files, expected) => applySnapshot(directory, files, expected, ensureClosed), live = false }) {
   if (!statusOnly) ensureClosed();
@@ -198,14 +282,32 @@ async function synchronizeUnlocked({ host, directory, statusOnly = false, transp
   let state = null;
   if (fs.existsSync(stateFile)) {
     state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    if (state.version !== 1 || state.host !== host || !/^[a-f0-9]{64}$/.test(state.revision)) throw new Error('Sync state belongs to another server or is invalid.');
+    if (![1, 2].includes(state.version) || state.host !== host || !/^[a-f0-9]{64}$/.test(state.revision)) throw new Error('Sync state belongs to another server or is invalid.');
   }
-  const head = live ? await transport(host, { op: 'head' }) : null;
-  const latest = head && head.revision === state?.revision && state?.files && revisionOf(state.files) === head.revision
-    ? { version: 1, revision: head.revision, files: state.files }
-    : await transport(host, { op: 'get' });
-  if (latest.version !== 1 || (latest.revision !== null && revisionOf(latest.files) !== latest.revision)
-    || (latest.revision === null && Object.keys(latest.files || {}).length !== 0)) throw new Error('Remote snapshot failed validation');
+  const head = await transport(host, { op: 'head' });
+  if (head.version !== 2 || !head.manifest || typeof head.manifest !== 'object') throw new Error('Update the SSH sync server to use this version of LearnHarness.');
+  const latestFiles = Object.create(null);
+  const needed = [];
+  for (const [name, info] of Object.entries(head.manifest)) {
+    if (!allowed(name) || !info || !/^[a-f0-9]{64}$/.test(info.hash) || !Number.isSafeInteger(info.size) || info.size < 0 || info.size > MAX_FILE) throw new Error('Invalid remote manifest');
+    const cached = [local.files[name], state?.files?.[name]].find(value => value !== undefined && crypto.createHash('sha256').update(Buffer.from(value, 'base64')).digest('hex') === info.hash);
+    if (cached !== undefined) latestFiles[name] = cached;
+    else needed.push(name);
+  }
+  for (const names of batches(needed, head.manifest)) {
+    const result = await transport(host, { op: 'get', revision: head.revision, names });
+    if (result.revision !== head.revision || !result.files || Object.keys(result.files).length !== names.length) throw Object.assign(new Error('Remote files changed during synchronization; retry.'), { code: 'retry' });
+    for (const name of names) {
+      const value = result.files[name];
+      if (typeof value !== 'string' || Buffer.from(value, 'base64').toString('base64') !== value) throw new Error('Invalid remote content');
+      const bytes = Buffer.from(value, 'base64');
+      if (bytes.length !== head.manifest[name].size || crypto.createHash('sha256').update(bytes).digest('hex') !== head.manifest[name].hash) throw new Error('Remote content failed integrity check');
+      latestFiles[name] = value;
+    }
+  }
+  const latest = { version: 2, revision: head.revision, files: latestFiles };
+  if ((latest.revision !== null && revisionOf(latest.files) !== latest.revision)
+    || (latest.revision === null && Object.keys(latest.files).length !== 0)) throw new Error('Remote snapshot failed validation');
   let merged;
   if (latest.revision === local.revision) merged = local;
   else if (latest.revision === null) {
@@ -219,6 +321,7 @@ async function synchronizeUnlocked({ host, directory, statusOnly = false, transp
     if (!base) throw new Error('Conflict: the previous sync has no common file history. Neither copy was overwritten.');
     merged = mergeSnapshots(base, local.files, latest.files);
   }
+  assertReferences(merged.files);
   const upload = merged.revision !== latest.revision;
   const download = merged.revision !== local.revision;
   const direction = upload && download ? 'merge' : upload ? 'upload' : download ? 'download' : 'unchanged';
@@ -227,14 +330,19 @@ async function synchronizeUnlocked({ host, directory, statusOnly = false, transp
   let backup = null;
   if (upload) {
     if (!live && (await capture()).revision !== local.revision) throw new Error('Local data changed; upload cancelled.');
-    const saved = await transport(host, { op: 'put', expected: latest.revision, files: merged.files });
+    const manifest = manifestOf(merged.files);
+    const changed = Object.keys(manifest).filter(name => manifest[name].hash !== head.manifest[name]?.hash);
+    for (const names of batches(changed, manifest)) {
+      await transport(host, { op: 'objects', files: Object.fromEntries(names.map(name => [name, merged.files[name]])) });
+    }
+    const saved = await transport(host, { op: 'put', expected: latest.revision, manifest });
     if (saved.revision !== revision) throw new Error('Remote upload was not confirmed.');
     // Acknowledge this immutable local checkpoint even if a busy writer defers
     // importing the peer's changes. New local edits will rebase on this checkpoint.
-    atomicJSON(stateFile, { version: 1, host, revision, files: local.files });
+    atomicJSON(stateFile, { version: 2, host, revision, files: local.files });
   }
   if (download) backup = await install(merged.files, local.revision);
-  atomicJSON(stateFile, { version: 1, host, revision, files: merged.files });
+  atomicJSON(stateFile, { version: 2, host, revision, files: merged.files });
   return { direction, revision, backup };
 }
 

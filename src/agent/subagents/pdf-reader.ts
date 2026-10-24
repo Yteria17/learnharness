@@ -1,3 +1,4 @@
+import { resolveLibraryPath } from "../../lib/library-path.ts";
 import { localizedPrompt } from "../language.ts";
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage, Message, ToolResultMessage, Usage, Tool } from "@earendil-works/pi-ai";
@@ -167,7 +168,7 @@ export async function runPdfReaderAgent(
 ): Promise<PdfResult> {
 	const headless = opts.headless ?? getHeadless();
 	const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
-	const pdfPath = input.path;
+	const pdfPath = resolveLibraryPath(input.path);
 
 	// Deterministic upfront failure: unreadable / unparseable
 	// for renders — the brief never starts on a broken source.
