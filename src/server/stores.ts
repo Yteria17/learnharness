@@ -11,6 +11,7 @@ import { graphStore } from "../store/graph.ts";
 import { jobStore } from "../store/jobs.ts";
 import { settingsStore } from "../store/settings.ts";
 import { syncStore } from "../store/sync.ts";
+import { languageSource } from "../agent/language.ts";
 import { resolveSettings, type EffectiveSettings } from "../core/settings-resolution.ts";
 /** The wired adapters. Satisfies core/graph.ts's GraphDeps structurally. */
 export const stores = {
@@ -34,3 +35,7 @@ export type Stores = typeof stores;
 export function effectiveSettings(): EffectiveSettings {
 	return resolveSettings(settingsStore.readSettings());
 }
+
+// Language wave (2026-10-24): sub-agents and one-shot model calls read the
+// output language fresh per run through the agent layer's seam.
+languageSource.current = () => effectiveSettings().general.language;
