@@ -730,6 +730,20 @@ export function Chat({
 			void send({ type: "continue" });
 		}
 	}, [chatId, setMessages, send, status]);
+	useServerEvent("profile-synced", () => {
+		// Adopt peer history in place, retaining composer state. Importing a
+		// checkpoint must never launch an AI continuation on this computer.
+		if (status !== "ready") return;
+		void fetch(`/api/chats/${chatId}`).then(async (response) => {
+			if (localStreamRef.current || turnInFlightRef.current || statusRef.current !== "ready") return;
+			if (response.status === 404) { setMessages([]); return; }
+			if (!response.ok) return;
+			const record = await response.json() as { messages?: LhMessage[]; turns?: TurnUsage[] };
+			if (localStreamRef.current || turnInFlightRef.current || statusRef.current !== "ready") return;
+			if (Array.isArray(record.messages)) setMessages(record.messages);
+			if (Array.isArray(record.turns)) setTurns(record.turns);
+		}).catch(() => {});
+	});
 
 	// The settled terminal's other half (stream-reattach wave): the
 	// transport resolved turn-settled — no turn running, the record is

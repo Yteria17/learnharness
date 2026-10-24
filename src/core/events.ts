@@ -24,6 +24,8 @@
 
 /** The full event vocabulary — fixed from day one (slice plan, 2026-10-02). */
 export interface ServerEvents {
+	/** A peer profile was imported atomically. Mounted views refetch in place. */
+	"profile-synced": Record<string, never>;
 	/** A teach turn began server-side (beginTurn) — client-initiated sends,
 	 *  wake turns, other-tab turns: every origin rides the same event. */
 	"turn-started": { chatId: string };
@@ -56,6 +58,7 @@ export type ServerEventType = keyof ServerEvents;
  *  name (types are erased; this list is the single source of truth for
  *  what the SSE channel can carry). */
 export const SERVER_EVENT_TYPES = [
+	"profile-synced",
 	"turn-started",
 	"turn-settled",
 	"jobs-changed",

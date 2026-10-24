@@ -53,6 +53,7 @@ files:
   # were only unpacked because their packages were packed.
   - "!**/*"
   - electron/**/*
+  - scripts/sync/sync-data.mjs
   - package.json
   # Auto-update (Wave C, 2026-10-10): electron-updater + its runtime tree
   # re-included explicitly. The negation above excludes node_modules, and

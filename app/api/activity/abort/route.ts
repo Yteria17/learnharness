@@ -1,3 +1,4 @@
+import { withSyncMutation } from "@/src/server";
 /**
  * POST /api/activity/abort — the dock's END/ABORT control, uniform across
  * process kinds (user-decided contract): body {kind: "job"|"extraction"|"turn", id}
@@ -19,7 +20,7 @@
  */
 import { abortExtraction, abortJob, abortTurn } from "@/src/server";
 
-export async function POST(req: Request) {
+export const POST = withSyncMutation(async function POST(req: Request) {
 	let body: unknown;
 	try {
 		body = await req.json();
@@ -51,4 +52,4 @@ export async function POST(req: Request) {
 	// flight is success — same dock outcome)
 	abortExtraction(id);
 	return Response.json({ ok: true });
-}
+});

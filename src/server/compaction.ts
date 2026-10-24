@@ -125,6 +125,7 @@ function state(): CompactionState {
 export function compactionInFlight(chatId: string): boolean {
 	return state().inFlight.has(chatId);
 }
+export function anyCompactionRunning(): boolean { return state().inFlight.size > 0; }
 
 /** Await any in-flight compaction for the chat — the structural gate
  *  every model interaction for the chat passes through. */

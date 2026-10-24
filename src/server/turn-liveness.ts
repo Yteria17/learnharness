@@ -32,6 +32,7 @@ function registry(): Map<string, number> {
 }
 
 const inFlight = registry();
+export function anyTurnRunning(): boolean { return inFlight.size > 0; }
 const MAX_TURN_MS = 30 * 60_000;
 
 /**

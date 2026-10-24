@@ -1,3 +1,4 @@
+import { withSyncMutation } from "@/src/server";
 /**
  * GET/PUT /api/graph/render-settings — server persistence for the graph
  * view's rendering controls (node/edge/arrow/label sizes, the label-zoom
@@ -20,7 +21,7 @@ export async function GET() {
 	return Response.json(readRenderSettings());
 }
 
-export async function PUT(request: Request) {
+export const PUT = withSyncMutation(async function PUT(request: Request) {
 	let body: unknown;
 	try {
 		body = await request.json();
@@ -28,4 +29,4 @@ export async function PUT(request: Request) {
 		return Response.json({ error: "invalid JSON body" }, { status: 400 });
 	}
 	return Response.json(writeRenderSettings(body));
-}
+});

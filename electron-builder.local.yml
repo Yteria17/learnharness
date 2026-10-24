@@ -1,0 +1,11 @@
+# Personal builds without the upstream author's Apple credentials.
+# Ad-hoc signatures do not provide the team identity required by the
+# production hardened runtime. This setting applies only to this local build.
+extends: ./electron-builder.yml
+mac:
+  icon: build/icon.icns
+  identity: '-'
+  notarize: false
+  hardenedRuntime: false
+# A personal build must not install upstream updates over local changes.
+publish: null

@@ -22,6 +22,7 @@ import { useServerEvent, useServerResync } from "@/components/server-events";
 import type { ChatListItem } from "@/src/core";
 import { kbdEventForAction } from "@/src/core";
 import { notifySettingsSaved } from "@/components/settings-signal";
+import { SyncIndicator } from "@/components/settings/sync-section.tsx";
 
 /**
  * Toggleable sidebar — NOT a modal drawer: no backdrop, no focus theft. It
@@ -48,7 +49,7 @@ const STORAGE_KEY = "lh:sidebar-open";
  *
  * Mirrors SIDEBAR_AUTOCLOSE in electron/main.cjs — keep in sync.
  */
-import type { ChatGPTControlBridge } from "@/src/core";
+import type { ChatGPTControlBridge, DesktopSyncBridge } from "@/src/core";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -61,6 +62,7 @@ declare global {
 			/** Read-only host OS; determines the native-control gutter. */
 			platform?: string;
 			chatgpt?: ChatGPTControlBridge;
+			sync?: DesktopSyncBridge;
 			expandWindow: () => void;
 			/** The zoom truth (owner round 7): subscribes to "lh:zoom" pushes; returns unsubscribe. */
 			onZoom?: (cb: (factor: number) => void) => () => void;
@@ -838,6 +840,7 @@ function SessionsSidebar() {
 					    New session — quiet, bottom-pinned, opens the centered
 					    dialog (also mod+, in the keyboard registry). */}
 					<div className="px-3 pb-3 pt-1">
+						<SyncIndicator onOpen={() => openSettings("sync")} />
 						<Hint label="Settings" action="open-settings" side="right">
 							<button
 								type="button"

@@ -21,6 +21,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FACTORY_SETTINGS, type AppearanceSettings } from "@/src/core";
+import { useSettingsSaved } from "@/components/settings-signal";
 
 /** The resolved, fully-concrete appearance view (delta + factory merged). */
 export function resolveAppearance(delta: AppearanceSettings | undefined) {
@@ -151,6 +152,10 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
 		}
 	}, [key, vars]);
 
+	useSettingsSaved((section) => {
+		if (section !== "appearance") return;
+		void fetch("/api/settings").then((r) => r.json()).then((body) => setDelta(body.settings?.appearance)).catch(() => {});
+	});
 	// One fetch per app load: the record (sanitized server-side) carries the
 	// delta; resolution happens here against the compiled factory.
 	useEffect(() => {

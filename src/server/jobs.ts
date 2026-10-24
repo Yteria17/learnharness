@@ -125,6 +125,7 @@ function state(): WakeState {
 	const g = globalThis as typeof globalThis & LhWakeGlobal;
 	return (g.__lhWakePipeline ??= { queues: new Map(), liveAgents: new Map(), userSteers: new Map(), pumping: new Set(), lastSweepAt: 0, automaticDeferred: new WeakSet() });
 }
+export function backgroundWritesPending(): boolean { return state().pumping.size > 0 || state().liveAgents.size > 0; }
 
 /** chat-handler wires this at module init: its adapter around handleChatRequest. */
 export function setTurnRunner(run: TurnRunner): void {

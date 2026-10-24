@@ -1,3 +1,4 @@
+import { withSyncMutation } from "@/src/server";
 import { chainsForSelection, formatChainLine } from "@/src/core";
 import { newGraphContextMessage, type GraphContextPick } from "@/src/core";
 import { compactionInFlight, createChat, isTurnRunning, listChats, readSettingsRecord, stores, titleFromPrompt } from "@/src/server";
@@ -19,7 +20,7 @@ export async function GET() {
 	return Response.json({ chats });
 }
 
-export async function POST(req: Request) {
+export const POST = withSyncMutation(async function POST(req: Request) {
 	const body = (await req.json().catch(() => ({}))) as { title?: unknown; kind?: unknown; graphContext?: unknown };
 	const title = typeof body.title === "string" ? body.title : "";
 	// Practice sessions (owner, 2026-10-04): kind "practice" marks the
@@ -68,4 +69,4 @@ export async function POST(req: Request) {
 		stores.chatStore.saveMessages(chat.id, [newGraphContextMessage(picks, chainLines)]);
 	}
 	return Response.json({ id: chat.id, title: chat.title });
-}
+});

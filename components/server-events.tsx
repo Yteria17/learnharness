@@ -26,6 +26,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { SERVER_EVENT_TYPES, type ServerEventType, type ServerEvents } from "@/src/core";
+import { notifySettingsSaved } from "@/components/settings-signal";
 
 /** The minimal source surface the provider consumes — EventSource behind
  *  this in production, fakes in tests. */
@@ -107,7 +108,14 @@ export function createNotifyHub() {
 /** Wire one source into a hub — the provider's ENTIRE effect body, factored
  *  out so the wiring is testable without React. Returns the disconnect. */
 export function wireSource(source: NotifySource, hub: ReturnType<typeof createNotifyHub>): () => void {
-	for (const name of SERVER_EVENT_TYPES) source.onEvent(name, (raw) => hub.dispatch(name, raw));
+	for (const name of SERVER_EVENT_TYPES) source.onEvent(name, (raw) => {
+		hub.dispatch(name, raw);
+		if (name === "profile-synced") {
+			// Peer imports are data changes, not reconnects: a reconnect's
+			// continuation heuristics could otherwise launch an extra AI turn.
+			if (typeof window !== "undefined") for (const section of ["general", "agent", "models", "appearance", "graph", "compaction"] as const) notifySettingsSaved(section);
+		}
+	});
 	source.onOpen(() => hub.fireOpen());
 	return () => source.close();
 }

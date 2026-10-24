@@ -44,12 +44,13 @@ import { SettingsSection, SettingsRow, Toggle } from "./controls.tsx";
 import { AgentSection } from "./agent-section.tsx";
 import type { ModelsSettings } from "@/src/core";
 import { MENU_CLOSE_EVENT, MENU_OPEN_EVENT } from "@/components/menu-shell";
-import { notifySettingsSaved } from "@/components/settings-signal";
+import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
 import { KeysSection } from "./keys-section.tsx";
 import { Hint } from "@/components/ui/hint";
 import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
 import { ChatGPTUIProvider } from "./chatgpt-connection.tsx";
+import { SyncSection } from "./sync-section.tsx";
 
 /** Owner (2026-09-20): hints earn their place — mechanics-explaining
  *  prose is out; only the keyboard note stays (storage location is a
@@ -60,6 +61,7 @@ const SECTIONS = [
 	{ id: "appearance", label: "Appearance" },
 	{ id: "graph", label: "Graph" },
 	{ id: "keyboard", label: "Keyboard", hint: "Stored on this device" },
+	{ id: "sync", label: "Sync", hint: "Stored on this device" },
 	{ id: "general", label: "General" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -191,6 +193,9 @@ export function SettingsDialogBody({
 	}, [initialSection]);
 
 	// Fetch once per dialog mount. 200 {settings: null} is FIRST BOOT
+	useSettingsSaved(() => {
+		void fetch("/api/settings").then((response) => response.json()).then((body) => setRecord(body.settings ?? { version: CURRENT_SETTINGS_VERSION })).catch(() => {});
+	});
 	// (no record = factory everything), not a failure — the error state is
 	// a non-200 or a network throw only.
 	useEffect(() => {
@@ -356,6 +361,7 @@ export function SettingsDialogBody({
 						</p>
 					) : (
 						<div>
+							{active === "sync" && <SettingsSection title="Device sync" testid="section-sync"><SyncSection /></SettingsSection>}
 							{active === "general" && (
 								<SettingsSection
 									title="General"

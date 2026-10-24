@@ -28,6 +28,7 @@ const { app, BrowserWindow, Menu, ipcMain, session, shell, dialog, safeStorage }
 const { createChatGPT, encryptedStore } = require("./chatgpt.cjs");
 const { attachChatGPTChild, trustedSender, chatGPTControl } = require("./chatgpt-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
+const { createDesktopSync, createSyncShutdown, syncControl } = require("./sync.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -134,6 +135,11 @@ if (process.argv.includes("--browser-service")) {
 let serverProcess = null;
 let chatgpt = null;
 let chatgptChild = null;
+let desktopSync = null;
+let quitting = false;
+let quitReady = false;
+let restartRequested = false;
+let updateInstallRequested = false;
 // Per-launch request capability, never OAuth tokens and never renderer state.
 let desktopAPISecret = null;
 const trustedAppWindows = new Set();
@@ -218,6 +224,9 @@ function startServer(port) {
 		);
 		serverProcess = child;
 		chatgptChild = attachChatGPTChild(child, chatgpt);
+		child.on("message", (message) => {
+			if (message?.channel === "lh:sync" && message.op === "dirty") desktopSync?.requestSoon();
+		});
 		const fwd = (buf) => buf.toString().trimEnd().split("\n").forEach((l) => l && log(`server: ${l}`));
 		child.stdout.on("data", fwd);
 		child.stderr.on("data", fwd);
@@ -262,6 +271,31 @@ function killServer() {
 			/* already gone */
 		}
 	}, 3000);
+}
+
+/** Do not read or replace a profile until every writer in the server has exited. */
+function stopServerForSync() {
+	chatgpt?.close();
+	const child = serverProcess;
+	if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+	return new Promise((resolve, reject) => {
+		const force = setTimeout(() => child.kill("SIGKILL"), 3000);
+		const deadline = setTimeout(() => { cleanup(); reject(new Error("The local server has not stopped. No data was synchronized.")); }, 10000);
+		function cleanup() { clearTimeout(force); clearTimeout(deadline); child.removeListener("exit", exited); }
+		function exited() { cleanup(); resolve(); }
+		child.once("exit", exited);
+		child.kill("SIGTERM");
+	});
+}
+
+async function liveSyncRequest(origin, operation) {
+	const response = await fetch(`${origin}/api/sync`, {
+		method: "POST", headers: { "content-type": "application/json", "x-learnharness-desktop": desktopAPISecret },
+		body: JSON.stringify(operation), signal: AbortSignal.timeout(30000),
+	});
+	const body = await response.json();
+	if (!response.ok) throw Object.assign(new Error(body.error || "Live synchronization failed"), { code: body.code });
+	return body;
 }
 
 /** Security posture (all defaults asserted explicitly; the guards are the
@@ -323,6 +357,7 @@ function createWindow(url) {
 	});
 
 	trustedAppWindows.add(win);
+	win.on("focus", () => desktopSync?.requestSoon());
 	win.once("closed", () => trustedAppWindows.delete(win));
 	const allowedOrigin = () => new URL(url).origin;
 	// Deny-by-default; the ONLY grants are media (mic/STT groundwork) and
@@ -452,13 +487,9 @@ function checkForUpdates({ manual = false } = {}) {
 }
 
 function installUpdateNow() {
-	// Kill the server BEFORE the quit-and-install (see block comment).
-	try {
-		killServer();
-	} catch {
-		/* already dead */
-	}
-	autoUpdater?.quitAndInstall();
+	// The normal quit barrier stops writers and synchronizes before installation.
+	updateInstallRequested = true;
+	app.quit();
 }
 
 function setupAutoUpdater() {
@@ -563,6 +594,7 @@ function installMenu() {
 }
 
 async function main() {
+	let finishWithSync = null;
 	app.on("window-all-closed", () => {
 		chatgpt?.pause();
 		// macOS convention: the app stays resident, reactivated from the Dock.
@@ -570,16 +602,60 @@ async function main() {
 	});
 
 	// The child must not outlive us — cover every quit path.
-	app.on("before-quit", killServer);
+	app.on("before-quit", (event) => {
+		if (quitReady) return;
+		if (!finishWithSync) { quitReady = true; killServer(); return; }
+		event.preventDefault();
+		quitting = true;
+		void finishWithSync();
+	});
 	process.on("exit", killServer);
 	process.on("SIGHUP", killServer);
 
 	await app.whenReady();
+	finishWithSync = createSyncShutdown({
+		stopServer: async () => { await desktopSync?.stopLive(); await stopServerForSync(); },
+		// Read the current instance: it is initialized after app-ready below.
+		sync: { run: () => desktopSync ? desktopSync.run() : Promise.resolve({ phase: "disabled" }) },
+		chooseFailure: async (message) => {
+			const result = await dialog.showMessageBox({
+				type: "warning", title: "LearnHarness synchronization",
+				message: "Your changes are saved on this computer, but were not synchronized.",
+				detail: `${message}\n\nRetry, or quit and synchronize automatically on the next launch. Conflicting copies are never overwritten.`,
+				buttons: ["Retry", "Quit keeping local changes"], defaultId: 0, cancelId: 1,
+			});
+			return result.response === 0 ? "retry" : "quit";
+		},
+		finish: () => {
+			quitReady = true;
+			if (updateInstallRequested && autoUpdater) autoUpdater.quitAndInstall();
+			else { if (restartRequested) app.relaunch(); app.quit(); }
+		},
+	});
 
 	// Dev mode: point at a running `next dev` server (LH_DEV_URL) — no
 	// spawn, no packaging, full HMR. The rest of this shell still applies
 	// (guards, menu, single instance).
 	const devUrl = process.env.LH_DEV_URL;
+	if (!devUrl) {
+		try {
+			desktopSync = createDesktopSync({
+				userData: app.getPath("userData"), directory: DATA_DIR(),
+				ensureIdle: () => {
+					if (serverProcess && serverProcess.exitCode === null && serverProcess.signalCode === null) throw new Error("The local server is still using this profile.");
+				},
+				onChange: (status) => {
+					log(`sync: ${status.phase}`);
+					for (const win of trustedAppWindows) if (!win.isDestroyed()) win.webContents.send("lh:sync:changed");
+				},
+			});
+			await desktopSync.run();
+		} catch (error) {
+			dialog.showErrorBox("Synchronization configuration could not be loaded", String(error.message || error));
+			quitReady = true; app.quit(); return;
+		}
+		if (quitting) return;
+	}
 	const url = devUrl ?? `http://127.0.0.1:${await freePort()}`;
 	if (!devUrl) {
 		desktopAPISecret = randomBytes(32).toString("hex");
@@ -601,6 +677,10 @@ async function main() {
 		await startServer(new URL(url).port);
 		await waitUntilUp(url);
 		log(`server up: ${url}`);
+		desktopSync?.startLive({
+			capture: () => liveSyncRequest(url, { op: "snapshot" }),
+			install: async (files, expected) => (await liveSyncRequest(url, { op: "apply", files, expected })).backup,
+		});
 	} else {
 		log(`dev mode: ${devUrl}`);
 	}
@@ -611,6 +691,14 @@ async function main() {
 		if (!trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) || !trustedSender(event, new URL(url).origin, BrowserWindow)) return { error: "Untrusted desktop request." };
 		if (!chatgpt || !serverProcess?.connected) return { available: false, pending: false, activeId: null, accounts: [], error: "ChatGPT sign-in requires the desktop app's private server connection. Browser-only and externally launched development servers keep API-key connections." };
 		return chatGPTControl(command, chatgpt);
+	});
+	ipcMain.handle("lh:sync:control", async (event, command) => {
+		if (!trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) || !trustedSender(event, new URL(url).origin, BrowserWindow)) return { error: "Untrusted desktop request." };
+		if (quitting && command?.op !== "status") return { error: "Synchronization is finishing. Wait for the app to close." };
+		return syncControl(command, desktopSync, () => {
+			restartRequested = true;
+			setImmediate(() => app.quit());
+		});
 	});
 
 	installMenu();
@@ -638,6 +726,7 @@ async function main() {
 		if (width < target) win.setBounds({ x, y, width: target, height });
 	});
 	app.on("activate", () => {
+		desktopSync?.requestSoon();
 		if (BrowserWindow.getAllWindows().length === 0) { chatgpt?.resume(); createWindow(url); }
 	});
 	createWindow(url);

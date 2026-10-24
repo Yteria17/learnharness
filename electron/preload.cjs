@@ -29,6 +29,17 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("lh", {
 	platform: process.platform,
+	sync: {
+		status: () => ipcRenderer.invoke("lh:sync:control", { op: "status" }),
+		configure: (config) => ipcRenderer.invoke("lh:sync:control", { op: "configure", config }),
+		now: () => ipcRenderer.invoke("lh:sync:control", { op: "now" }),
+		restart: () => ipcRenderer.invoke("lh:sync:control", { op: "restart" }),
+		onChange: (cb) => {
+			const listener = () => cb();
+			ipcRenderer.on("lh:sync:changed", listener);
+			return () => ipcRenderer.removeListener("lh:sync:changed", listener);
+		},
+	},
 	chatgpt: {
 		status: () => ipcRenderer.invoke("lh:chatgpt:control", { op: "status" }),
 		login: (id) => ipcRenderer.invoke("lh:chatgpt:control", { op: "login", id }),
