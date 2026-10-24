@@ -81,7 +81,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	 * means the field is often never focused — the window-level Enter
 	 * (typing surfaces and buttons excluded) submits the trace. Mounted
 	 * while the dock is — collapsed bar included (the trace survives). */
-	useEnterSubmits(submit);
+	useEnterSubmits(submit, expanded);
 
 	/* ── the collapsed bar ── */
 	if (!expanded) {
@@ -129,6 +129,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						setThinking(e.target.value);
 					}}
 					onKeyDown={(e) => {
+						if (e.nativeEvent.isComposing || e.repeat) return;
 						// Esc ends dictation — stopPropagation claims it (the
 						// keyboard machine) so the window chain doesn't also fire.
 						if (e.key === "Escape" && onEscape) {

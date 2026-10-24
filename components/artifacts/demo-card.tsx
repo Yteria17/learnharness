@@ -1,7 +1,7 @@
 "use client";
 
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon } from "lucide-react";
+import { DownloadIcon, Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { Toggle } from "@/components/settings/controls";
 import { InvertDiscIcon } from "@/components/artifacts/invert-disc";
 import { ChatActionsContext } from "@/components/chat";
@@ -30,7 +30,14 @@ import type { ArtifactPartProps, DemoResult } from "@/src/core";
 
 export const DEMO_BRIDGE_SCRIPT = `<script>(function(){
 var send=function(m){try{parent.postMessage(m,"*")}catch(e){}};
+var theme=function(){
+var color=function(el){var c=getComputedStyle(el).backgroundColor;var n=c.match(/[\\d.]+/g);return n&&n.length>=3&&(n.length<4||Number(n[3])>0)?n.map(Number):null};
+var c=(document.body&&color(document.body))||color(document.documentElement)||[255,255,255];
+send({type:"demo-theme",dark:(c[0]*0.2126+c[1]*0.7152+c[2]*0.0722)<128})
+};
+window.addEventListener("keydown",function(e){if(e.key==="Escape"){send({type:"demo-escape"})}});
 var post=function(){
+theme();
 var b=document.body;
 if(!b){send({type:"demo-resize",height:document.documentElement.scrollHeight});return}
 var h=Math.max(b.scrollHeight,b.getBoundingClientRect().height);
@@ -94,7 +101,7 @@ export function DemoCard({ part }: ArtifactPartProps) {
 export function DemoOutputCard({
 	output,
 	messageId,
-	initialInverted = false,
+	initialInverted,
 }: {
 	output: unknown;
 	messageId?: string;
@@ -129,7 +136,7 @@ function DemoFrame({
 	title,
 	html,
 	messageId,
-	initialInverted = false,
+	initialInverted,
 }: {
 	title: string;
 	html: string;
@@ -138,6 +145,11 @@ function DemoFrame({
 }) {
 	const actions = useContext(ChatActionsContext);
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
+	const cardRef = useRef<HTMLDivElement | null>(null);
+	const fullscreenButtonRef = useRef<HTMLButtonElement | null>(null);
+	const nativeFullscreen = useRef(false);
+	const [expanded, setExpanded] = useState(false);
+	const [sourceDark, setSourceDark] = useState(false);
 	const [state, setState] = useState<DemoBridgeState>(INITIAL_DEMO_BRIDGE_STATE);
 	// Brightness inversion (owner, 2026-10-07): the switch state PERSISTS on
 	// the steer record (details.ui.inverted) — seeded here, written through
@@ -146,7 +158,9 @@ function DemoFrame({
 	// element, which carries the card's white backing, so one filter flips
 	// page + content together while hue-rotate(180deg) undoes invert's hue
 	// flip.
-	const [inverted, setInverted] = useState(initialInverted);
+	const [inversionOverride, setInverted] = useState<boolean | undefined>(initialInverted);
+	// Old light demos adapt automatically; authored dark demos keep their own colors.
+	const inverted = inversionOverride ?? !sourceDark;
 	const toggleInverted = (next: boolean) => {
 		setInverted(next);
 		if (!actions?.chatId || !messageId) return;
@@ -158,11 +172,48 @@ function DemoFrame({
 	};
 	const srcDoc = useMemo(() => buildDemoSrcDoc(html), [html]);
 
+	const expandedRef = useRef(expanded);
+	expandedRef.current = expanded;
+	const closeExpanded = async () => {
+		if (document.fullscreenElement === cardRef.current) await document.exitFullscreen().catch(() => {});
+		setExpanded(false);
+		fullscreenButtonRef.current?.focus();
+	};
+	const toggleExpanded = () => {
+		if (expanded) { void closeExpanded(); return; }
+		setExpanded(true);
+		// The CSS expansion is also the fallback when native fullscreen is unavailable.
+		void cardRef.current?.requestFullscreen?.().catch(() => {});
+	};
+	useEffect(() => {
+		const onFullscreen = () => {
+			const ours = document.fullscreenElement === cardRef.current;
+			if (nativeFullscreen.current && !ours) { setExpanded(false); fullscreenButtonRef.current?.focus(); }
+			nativeFullscreen.current = ours;
+		};
+		document.addEventListener("fullscreenchange", onFullscreen);
+		return () => document.removeEventListener("fullscreenchange", onFullscreen);
+	}, []);
+	useEffect(() => {
+		if (!expanded) return;
+		const overflow = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		const escape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			event.preventDefault(); event.stopPropagation();
+			void closeExpanded();
+		};
+		window.addEventListener("keydown", escape, true);
+		return () => { document.body.style.overflow = overflow; window.removeEventListener("keydown", escape, true); };
+	}, [expanded]);
+
 	useEffect(() => {
 		const onMessage = (event: MessageEvent) => {
 			// Only messages from THIS demo's iframe (the sandbox gives it an
 			// opaque origin; the window reference still matches).
 			if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
+			if (event.data?.type === "demo-theme" && typeof event.data.dark === "boolean") setSourceDark(event.data.dark);
+			if (event.data?.type === "demo-escape" && expandedRef.current) void closeExpanded();
 			setState((prev) => reduceDemoBridgeState(prev, event.data));
 		};
 		window.addEventListener("message", onMessage);
@@ -170,7 +221,7 @@ function DemoFrame({
 	}, []);
 
 	return (
-		<div className="rounded-xl border bg-card p-4 text-card-foreground" data-testid="demo-card">
+		<div ref={cardRef} className={expanded ? "fixed inset-0 z-[80] flex h-dvh w-screen flex-col border bg-card p-4 text-card-foreground" : "rounded-xl border bg-card p-4 text-card-foreground"} data-testid="demo-card" data-demo-expanded={expanded} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? title : undefined}>
 			{/* Caption header (owner, 2026-10-07): kind label + title in the
 			   label's size/tracking (title normal-case, foreground) — the
 			   figure card's grammar plus a name. Switch + download far right. */}
@@ -182,6 +233,9 @@ function DemoFrame({
 					<span className="truncate text-xs font-medium tracking-wide text-foreground">{title}</span>
 				</div>
 				<div className="flex shrink-0 items-center gap-1.5">
+					<button ref={fullscreenButtonRef} type="button" onClick={toggleExpanded} data-testid="demo-fullscreen" aria-label={expanded ? "Exit demo fullscreen" : "Expand demo fullscreen"} title={expanded ? "Réduire (Échap)" : "Agrandir la démo"} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+						{expanded ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
+					</button>
 					<Toggle
 						checked={inverted}
 						onChange={toggleInverted}
@@ -220,13 +274,13 @@ function DemoFrame({
 				// before the first resize lands — and a scrollable iframe TRAPS
 				// the wheel (session scrolling stalls over the demo). With
 				// scrolling disabled the wheel chains straight to the session.
-				scrolling="no"
-				className="mt-2 w-full rounded-lg border bg-white"
+				scrolling={expanded ? "auto" : "no"}
+				className={`mt-2 w-full rounded-lg border bg-white ${expanded ? "min-h-0 flex-1" : ""}`}
 				// content-box: the bridge reports the CONTENT height — with the
 				// preflight's border-box the 2px border would eat into it and clip
 				// the bottom of the demo (smoke finding, 2026-10-07).
 				style={{
-					height: state.height ?? 360,
+					height: expanded ? "100%" : state.height ?? 360,
 					boxSizing: "content-box",
 					filter: inverted ? "invert(1) hue-rotate(180deg)" : undefined,
 				}}

@@ -80,3 +80,13 @@ describe("blurAfterPointerClick (focus hygiene)", () => {
 		assert.equal(blurred, false);
 	});
 });
+
+describe("Enter submission event ownership", () => {
+	it("rejects an already handled key, held repeats, and composition confirmation", async () => {
+		const { isSubmitEnter } = await import("../components/enter-submits.ts");
+		const event = {key:"Enter",defaultPrevented:false,isComposing:false,repeat:false,shiftKey:false,altKey:false,metaKey:false,ctrlKey:false};
+		assert.equal(isSubmitEnter(event),true);
+		for (const patch of [{defaultPrevented:true},{isComposing:true},{repeat:true},{shiftKey:true},{altKey:true}]) assert.equal(isSubmitEnter({...event,...patch}),false);
+		assert.equal(isSubmitEnter({...event,ctrlKey:true}),true);
+	});
+});

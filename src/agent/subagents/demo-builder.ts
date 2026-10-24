@@ -61,7 +61,7 @@ Build quality:
 - The demo must directly serve the brief: every control named in the brief must exist and do the thing.
 - Controls need labels; sliders/inputs need current-value readouts. A learner should operate it unguided.
 - Smooth enough interaction; requestAnimationFrame for animation, not setInterval when it matters.
-- Dark-mode neutral: pick a clean light background for the demo area so it reads on any card.
+- Dark mode by default: use a dark background (for example #111318), light text, clearly visible axes and labels, and high-contrast controls. Set CSS color-scheme: dark. Keep the layout responsive so it also fills a fullscreen viewport.
 
 THE HOUSE RULE — never deliver untested:
 1. Call write_demo with the complete HTML document.

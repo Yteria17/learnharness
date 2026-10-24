@@ -13,7 +13,7 @@
  * What the window listener refuses to touch:
  * - typing surfaces (input/textarea/select/contenteditable) — the focused
  *   surface owns its Enter (the dock field, the composer, settings);
- * - modified Enter (⇧↵ is a newline, ⌘/Ctrl↵ belongs to the surface).
+ * - Shift+Enter and Alt+Enter; Ctrl/Cmd+Enter can submit from outside fields.
  *
  * BUTTONS — the pointer/keyboard split (owner, keyboard round 2026-10-10):
  * a mouse click on a transcript control (a thinking toggle, a copy button)
@@ -39,7 +39,7 @@ import { isTypingSurface } from "@/src/core";
 
 /** Overlay roots whose buttons keep native Enter (hand-rolled menus mark
  *  themselves data-lh-menu; Radix poppers/dialogs carry their own attrs). */
-const OVERLAY_ROOTS = '[data-lh-menu], [data-radix-popper-content-wrapper], [role="menu"], [role="dialog"]';
+export const OVERLAY_ROOTS = '[data-lh-menu], [data-radix-popper-content-wrapper], [role="menu"], [role="dialog"], [data-demo-expanded="true"]';
 
 /** Pure decision, exported for pins: does a focused BUTTON keep native
  *  Enter (true) or does Enter belong to submit (false)? */
@@ -59,20 +59,26 @@ export function buttonKeepsNativeEnter(el: HTMLElement): boolean {
 
 /** Mount-scoped: while the dock is mounted (a problem/question is active),
  *  plain Enter anywhere outside a typing surface or button submits it. */
-export function useEnterSubmits(submit: () => void): void {
+export function isSubmitEnter(e: Pick<KeyboardEvent, "key" | "defaultPrevented" | "isComposing" | "repeat" | "shiftKey" | "altKey" | "metaKey" | "ctrlKey">): boolean {
+	return e.key === "Enter" && !e.defaultPrevented && !e.isComposing && !e.repeat && !e.altKey && (!e.shiftKey || e.metaKey || e.ctrlKey);
+}
+
+export function useEnterSubmits(submit: () => void, enabled = true): void {
 	const submitRef = useRef(submit);
 	submitRef.current = submit;
 	useEffect(() => {
+		if (!enabled) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key !== "Enter") return;
-			if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-			if (isTypingSurface(e)) return;
+			if (!isSubmitEnter(e)) return;
 			const target = e.target as HTMLElement | null;
+			if (target?.closest(OVERLAY_ROOTS)) return;
+			const range = target?.tagName === "INPUT" && (target as HTMLInputElement).type === "range";
+			if (isTypingSurface(e) && !range) return;
 			if (target?.tagName === "BUTTON" && buttonKeepsNativeEnter(target)) return;
 			e.preventDefault();
 			submitRef.current();
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, []);
+	}, [enabled]);
 }

@@ -16,10 +16,7 @@ import {
   memo,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
-  useState,
 } from "react";
 import { Streamdown } from "streamdown";
 
@@ -51,7 +48,6 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   onOpenChange?: (open: boolean) => void;
 };
 
-const AUTO_CLOSE_DELAY = 1000;
 
 export const Reasoning = memo(
   ({
@@ -63,38 +59,12 @@ export const Reasoning = memo(
     children,
     ...props
   }: ReasoningProps) => {
-    // COLLAPSED BY DEFAULT, ALWAYS (owner, streaming round 2026-10-01):
-    // the old default opened on streaming and an auto-open effect
-    // re-fought a manual collapse — the block "wasn't collapsible until
-    // it finished". Collapsed is the default; opening is always the
-    // learner's click; the auto-close after the stream still tidies a
-    // row the learner had opened.
-    const resolvedDefaultOpen = defaultOpen ?? false;
-
+    // Visible by default; a learner's manual collapse remains authoritative.
     const [isOpen, setIsOpen] = useControllableState<boolean>({
-      defaultProp: resolvedDefaultOpen,
+      defaultProp: defaultOpen ?? true,
       onChange: onOpenChange,
       prop: open,
     });
-    const hasEverStreamedRef = useRef(isStreaming);
-    const [hasAutoClosed, setHasAutoClosed] = useState(false);
-
-    // Auto-close when streaming ends (once only, and only if it ever streamed)
-    useEffect(() => {
-      if (
-        hasEverStreamedRef.current &&
-        !isStreaming &&
-        isOpen &&
-        !hasAutoClosed
-      ) {
-        const timer = setTimeout(() => {
-          setIsOpen(false);
-          setHasAutoClosed(true);
-        }, AUTO_CLOSE_DELAY);
-
-        return () => clearTimeout(timer);
-      }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {
@@ -111,6 +81,7 @@ export const Reasoning = memo(
     return (
       <ReasoningContext.Provider value={contextValue}>
         <Collapsible
+          data-testid="agent-reasoning"
           className={cn("not-prose mb-4", className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
@@ -200,20 +171,21 @@ export type ReasoningContentProps = ComponentProps<
 // remark-breaks) — reasoning renders the same contract as message text.
 
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
+  ({ className, children, ...props }: ReasoningContentProps) => {
+    const { isStreaming } = useReasoning();
+    return <CollapsibleContent
+      data-testid="agent-reasoning-content"
       className={cn(
-        "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+        "mt-3 text-sm text-muted-foreground outline-none",
         className
       )}
       {...props}
     >
-      <Streamdown components={mdComponents} plugins={streamdownPlugins}>
+      {children.trim() ? <Streamdown components={mdComponents} plugins={streamdownPlugins}>
         {transformMathDelimiters(children)}
-      </Streamdown>
-    </CollapsibleContent>
-  )
+      </Streamdown> : <p className="text-xs italic">{isStreaming ? "En attente du résumé de raisonnement…" : "Le modèle n’a pas fourni de résumé de raisonnement pour cette réponse."}</p>}
+    </CollapsibleContent>;
+  }
 );
 
 Reasoning.displayName = "Reasoning";
