@@ -60,7 +60,7 @@ Default desktop data directories:
 | Linux | `${XDG_CONFIG_HOME:-~/.config}/LearnHarness/data` |
 
 Use `--data /absolute/path` only for an explicitly chosen alternate profile.
-`status` does not upload or download. It reports the direction of the next sync.
+`status` reads the remote state but does not upload, migrate or replace local data. It estimates the direction of the next sync.
 On a new, empty computer, sync downloads the server's profile. The first computer
 uploads its profile into an empty server. On a previously synchronized computer,
 the tool compares local and remote contents with their last shared revision.
@@ -103,3 +103,19 @@ python3 -B scripts/sync/test_sync_store.py
 Tests cover independent edits, deletions, initial profile collisions, credential
 exclusion, symlink/path traversal, concurrent server uploads, revision history,
 and a failed server commit preserving the previous head.
+
+
+## Protocol v2: attachments and incremental transfers
+
+Version 0.3.7-fork.1 adds `attachments/<sha256>.bin` and `documents/<id>.json`.
+`head` returns file hashes and sizes, `get` reads selected files at a specific
+revision, `objects` stages bounded content batches, and `put` atomically commits
+a complete manifest with compare-and-swap. Unchanged bytes do not travel over SSH.
+Limits: 50 MiB per file, 1 GiB per profile, 20,000 entries, 96 MiB per wire request.
+Every object is verified against its SHA-256 hash. Existing v1 state can be read
+by v2 clients and is materialized into objects on the first v2 commit. Old clients
+are explicitly refused after that commit. Upgrade every desktop together.
+
+Original local files are shared only after adding them to **Bibliothèque** or a
+new notes import. Previously discarded originals cannot be reconstructed. The
+library preserves exact bytes and portable references for the existing readers.

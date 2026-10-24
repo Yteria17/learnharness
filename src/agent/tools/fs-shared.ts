@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import { resolveLibraryPath } from "../../lib/library-path.ts";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -40,6 +41,7 @@ const EXCLUDED_DIR_NAMES = new Set(["node_modules", ".git", "Library", ".Trash"]
  *  learner's life, so the home directory is the anchor.) */
 export function resolveSourcePath(p?: string): string {
 	if (!p) return os.homedir();
+	if (p.startsWith("library://")) return resolveLibraryPath(p);
 	return path.isAbsolute(p) ? p : path.join(os.homedir(), p);
 }
 

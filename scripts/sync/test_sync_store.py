@@ -57,6 +57,57 @@ class StoreTests(unittest.TestCase):
                 self.request(op="put", expected=first["revision"], files={})
         self.assertEqual(self.request(op="get")["revision"], first["revision"])
 
+    def v2(self, **fields):
+        return store.handle(self.root, {"version": 2, **fields})
+
+    def test_v2_migrates_legacy_history_without_changing_old_versions(self):
+        first = self.request(op="put", expected=None, files={"settings.json": "e30="})
+        old_history = (self.root / "history" / (first["revision"] + ".json")).read_bytes()
+        head = self.v2(op="head")
+        downloaded = self.v2(op="get", revision=head["revision"], names=["settings.json"])
+        self.assertEqual(downloaded["files"], {"settings.json": "e30="})
+        self.assertTrue(self.v2(op="put", expected=head["revision"], manifest=head["manifest"])["ok"])
+        self.assertEqual((self.root / "history" / (first["revision"] + ".json")).read_bytes(), old_history)
+        with self.assertRaisesRegex(ValueError, "Update LearnHarness"):
+            self.request(op="put", expected=first["revision"], files={})
+
+    def test_v2_objects_are_deduplicated_and_missing_objects_cannot_commit(self):
+        files = {"chats/a.json": "e30=", "chats/b.json": "e30="}
+        manifest = store.manifest_of(files)
+        with self.assertRaisesRegex(ValueError, "Missing object"):
+            self.v2(op="put", expected=None, manifest=manifest)
+        self.assertIsNone(self.v2(op="head")["revision"])
+        self.v2(op="objects", files=files)
+        self.assertEqual(len(list((self.root / "objects").iterdir())), 1)
+        self.assertTrue(self.v2(op="put", expected=None, manifest=manifest)["ok"])
+
+    def test_v2_stale_commit_and_stale_download_do_not_replace_data(self):
+        self.v2(op="objects", files={"settings.json": "e30="})
+        first = self.v2(op="put", expected=None, manifest=store.manifest_of({"settings.json": "e30="}))
+        self.assertFalse(self.v2(op="put", expected=None, manifest={})["ok"])
+        self.assertFalse(self.v2(op="get", revision="old", names=["settings.json"])["ok"])
+        self.assertEqual(self.v2(op="head")["revision"], first["revision"])
+
+    def test_v2_rejects_unsafe_names_bad_hashes_and_oversized_files(self):
+        for manifest in [
+            {"auth.json": {"hash": "a" * 64, "size": 1}},
+            {"settings.json": {"hash": "../head.json", "size": 1}},
+            {"attachments/" + "a" * 64 + ".bin": {"hash": "b" * 64, "size": 1}},
+            {"settings.json": {"hash": "a" * 64, "size": store.MAX_FILE + 1}},
+            {"settings.json": {"hash": "a" * 64, "size": True}},
+        ]:
+            with self.assertRaises(ValueError):
+                self.v2(op="put", expected=None, manifest=manifest)
+
+    def test_v2_histories_keep_manifests_and_share_immutable_bytes(self):
+        self.v2(op="objects", files={"settings.json": "e30="})
+        first = self.v2(op="put", expected=None, manifest=store.manifest_of({"settings.json": "e30="}))
+        self.v2(op="put", expected=first["revision"], manifest={})
+        import json
+        histories = [json.loads(file.read_text()) for file in (self.root / "history").glob("*.json")]
+        self.assertTrue(all("manifest" in item and "files" not in item for item in histories))
+        self.assertEqual(len(list((self.root / "objects").iterdir())), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -679,9 +679,11 @@ async function main() {
 		await startServer(new URL(url).port);
 		await waitUntilUp(url);
 		log(`server up: ${url}`);
+		let capturedFiles = {};
+		const syncEngine = await import(require("node:url").pathToFileURL(path.join(__dirname, "../scripts/sync/sync-data.mjs")).href);
 		desktopSync?.startLive({
-			capture: () => liveSyncRequest(url, { op: "snapshot" }),
-			install: async (files, expected) => (await liveSyncRequest(url, { op: "apply", files, expected })).backup,
+			capture: async () => { const saved = await liveSyncRequest(url, { op: "snapshot" }); capturedFiles = saved.files; return saved; },
+			install: async (files, expected) => (await syncEngine.installLiveSnapshot(files, expected, capturedFiles, (operation) => liveSyncRequest(url, operation))).backup,
 		});
 	} else {
 		log(`dev mode: ${devUrl}`);

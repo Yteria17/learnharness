@@ -16,12 +16,45 @@ Formats : PNG, JPEG, WebP et GIF. Au maximum quatre images par message, 5 Mo par
 image et 10 Mo d’images au total par message. Le modèle doit accepter les images.
 Pendant une réponse, les images attendent la fin de celle-ci avant l’envoi.
 
-Les images sont intégrées aux fichiers de conversation, conformément à la PR amont.
-Le profil synchronisé reste limité à 64 Mio : les collections d’images volumineuses
-peuvent atteindre cette limite et mettre la synchronisation en attente d’une réduction
-du profil. L’app affiche l’erreur ; les données locales sont conservées. Le déplacement
-des images dans un stockage de pièces jointes dédié reste une évolution future.
-L’export Markdown actuel n’intègre pas les images.
+Les images sont désormais enregistrées séparément, une seule fois par contenu,
+dans `data/attachments/`. Les conversations conservent des références et le serveur
+reconstitue les messages natifs pour l’affichage et les fournisseurs. Les anciennes
+captures sont migrées automatiquement lors de la synchronisation ; l’original de
+chaque conversation modifiée est conservé dans `attachment-migration-backups/`.
+Le format des conversations passe à v2, compris par cette version du fork.
+L’export Markdown actuel n’intègre toujours pas les images.
+
+## Bibliothèque et documents sources — 0.3.7-fork.1
+
+L’entrée **Bibliothèque** de la barre latérale permet d’ajouter les PDF et notes,
+de les télécharger et de copier une référence `library://…` dans une conversation.
+Cette référence fonctionne sur Windows, macOS et Linux après synchronisation.
+Les fichiers originaux ajoutés à la bibliothèque et les prochains imports de notes
+sont conservés octet pour octet. Ajouter un document ne lance aucun appel de modèle.
+Les formats que les agents savent analyser restent ceux de leurs outils (PDF et texte).
+
+Les anciens imports n’avaient pas conservé leurs originaux : ajoutez ces fichiers
+une fois dans la bibliothèque. Les fichiers simplement présents sur le disque ne
+sont pas collectés automatiquement. Les images et documents identiques partagent
+les mêmes octets, y compris entre plusieurs conversations et noms de documents.
+
+## Synchronisation incrémentale
+
+Le protocole SSH v2 compare des manifestes SHA-256 et ne transfère que les fichiers
+modifiés, par lots bornés. Une modification de titre ne renvoie plus les PDF ou
+captures inchangés. Les suppressions sont représentées dans le manifeste. Le VPS
+conserve les octets une seule fois par empreinte et les nouvelles versions sous
+forme de manifestes ; les historiques v1 existants sont conservés.
+
+Limites : 50 Mio par fichier, 1 Gio pour le profil partagé, 20 000 fichiers.
+Les limites des images par message restent inchangées. Les imports locaux en cours
+d’utilisation sont eux aussi transmis par lots, puis publiés sous le même verrou
+de révision et la même barrière d’activité qu’auparavant.
+
+Installez **0.3.7-fork.1 sur tous les ordinateurs**. Après la première publication
+v2, un ancien client est refusé explicitement pour empêcher qu’il efface la
+bibliothèque qu’il ne connaît pas. Les réglages SSH et connexions ChatGPT restent
+locaux et sont conservés lors de la mise à jour depuis 0.3.6.
 
 ## Français
 

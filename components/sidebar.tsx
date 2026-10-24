@@ -840,6 +840,7 @@ function SessionsSidebar() {
 					    New session — quiet, bottom-pinned, opens the centered
 					    dialog (also mod+, in the keyboard registry). */}
 					<div className="px-3 pb-3 pt-1">
+						<Link href="/library" className="mb-1 flex rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">Bibliothèque</Link>
 						<SyncIndicator onOpen={() => openSettings("sync")} />
 						<Hint label="Settings" action="open-settings" side="right">
 							<button

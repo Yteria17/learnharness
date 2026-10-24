@@ -79,3 +79,5 @@ export * from "./coverage.ts";
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
 export type { DesktopSyncStatus, DesktopSyncBridge } from "./contracts/sync.ts";
+
+export * from "./documents.ts";

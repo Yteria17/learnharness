@@ -43,6 +43,8 @@ jobs:
           '
       - run: npm run typecheck
       - run: npm test
+      - run: node --test scripts/sync/sync-data.test.mjs
+      - run: python3 -m unittest discover -s scripts/sync -p 'test_*.py'
       - run: npm run lint
 
   draft:

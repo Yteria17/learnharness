@@ -20,6 +20,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { after, before, describe, it } from "node:test";
 import puppeteer from "puppeteer-core";
+import crypto from "node:crypto";
+import { installLiveSnapshot } from "../../scripts/sync/sync-data.mjs";
 
 const PORT = Number(process.env.LH_E2E_PORT ?? 3311);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -240,4 +242,48 @@ describe("composer image paste (e2e)", () => {
 		const body = await res.json();
 		assert.match(body.error ?? "", /PNG, JPEG, WebP, or GIF/);
 	});
+	it("library: upload, deduplicate, download exact bytes and retain after reload", async () => {
+		await page.goto(`${BASE}/library`, { waitUntil: "networkidle2" });
+		await page.waitForSelector('input[type="file"]');
+		const fixture = path.resolve("tests/fixtures/sample-3page.pdf");
+		await (await page.$('input[type="file"]')).uploadFile(fixture);
+		await page.waitForFunction(() => document.querySelector("main")?.textContent?.includes("sample-3page.pdf"));
+		const initial = await (await fetch(`${BASE}/api/documents`)).json();
+		const doc = initial.documents.find(item => item.name === "sample-3page.pdf");
+		assert.ok(doc?.reference.startsWith("library://"));
+		const response = await fetch(`${BASE}/api/documents/${doc.id}`);
+		assert.equal(response.status,200);
+		assert.deepEqual(Buffer.from(await response.arrayBuffer()),fs.readFileSync(fixture));
+		const blobs = fs.readdirSync(path.join(dataDir,"attachments")).length;
+		const form = new FormData(); form.append("files",new Blob([fs.readFileSync(fixture)],{type:"application/pdf"}),"sample-3page.pdf");
+		assert.equal((await fetch(`${BASE}/api/documents`,{method:"POST",body:form})).status,200);
+		assert.equal(fs.readdirSync(path.join(dataDir,"attachments")).length,blobs);
+		await page.reload({waitUntil:"networkidle2"});
+		assert.ok(await page.$eval("main",el=>el.textContent.includes("sample-3page.pdf")));
+	});
+
+	it("library: live staged peer import refreshes the open page without a reload",async()=>{
+		const request = async operation => {
+			const response=await fetch(`${BASE}/api/sync`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(operation)});
+			const body=await response.json(); if(!response.ok) throw Object.assign(new Error(body.error),{code:body.code}); return body;
+		};
+		const bytes=Buffer.from("notes from another computer");
+		const hash=crypto.createHash("sha256").update(bytes).digest("hex");
+		const name="notes-du-second-pc.txt";
+		const id=crypto.createHash("sha256").update(`${hash}\n${name}`).digest("hex");
+		const doc={id,name,attachmentId:hash,mimeType:"text/plain",size:bytes.length,reference:`library://${id}/${name}`};
+		const originalUrl=page.url();
+		for(let attempt=0;;attempt++){
+			try {
+				const before=await request({op:"snapshot"});
+				const files={...before.files,[`attachments/${hash}.bin`]:bytes.toString("base64"),[`documents/${id}.json`]:Buffer.from(JSON.stringify(doc)).toString("base64")};
+				await installLiveSnapshot(files,before.revision,before.files,request);
+				break;
+			}catch(error){ if(error.code!=="deferred"||attempt>30)throw error; await new Promise(resolve=>setTimeout(resolve,100)); }
+		}
+		await page.waitForFunction(()=>document.querySelector("main")?.textContent?.includes("notes-du-second-pc.txt"));
+		assert.equal(page.url(),originalUrl);
+		assert.deepEqual(Buffer.from(await (await fetch(`${BASE}/api/documents/${id}`)).arrayBuffer()),bytes);
+	});
+
 });

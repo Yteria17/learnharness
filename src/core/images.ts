@@ -3,7 +3,7 @@
  *
  * The learner pastes a screenshot into the composer; it rides the EXISTING
  * text input event as native pi ImageContent blocks inside the user
- * message — no attachment store, no second history. These limits are the
+ * message. The disk adapter externalizes image bytes into the shared attachment store. These limits are the
  * trust boundary: the client refuses early for a kind message, the server
  * refuses the same content with a 400 before the write-ahead appends
  * anything (input-events.parseChatInput).

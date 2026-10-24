@@ -1,3 +1,4 @@
+import { addDocument } from "@/src/server";
 import { withSyncMutation } from "@/src/server";
 /**
  * POST /api/graph/import — the format-agnostic front door's transport
@@ -56,7 +57,9 @@ export const POST = withSyncMutation(async function POST(request: Request) {
 			if (!next) return;
 			const { file, requestIndex } = next;
 			try {
-				const text = await file.text();
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				addDocument(file.name, bytes, file.type);
+				const text = new TextDecoder().decode(bytes);
 				const stats = await extraction.importNotes({ filePath: file.name, text });
 				results.push({ filePath: file.name, requestIndex, outcome: "completed", ok: true, stats });
 			} catch (err) {
