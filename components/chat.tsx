@@ -756,7 +756,7 @@ export function Chat({
 	 * self-guards on nextReady, so the listener is inert outside the
 	 * pause — the dock-mounted listeners are gone by then (docks unmount
 	 * when nothing is active; the two never overlap). */
-	useEnterSubmits(sendNext);
+	useEnterSubmits(sendNext, nextReady);
 
 	const syncFromServer = useCallback(async () => {
 		const res = await fetch(`/api/chats/${chatId}`);
@@ -2250,7 +2250,7 @@ function DockOverlay({
 	useEffect(() => {
 		if (!pending || expanded) return;
 		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.key !== "Enter" || e.altKey) return;
+			if (e.key !== "Enter" || e.altKey || e.defaultPrevented || e.isComposing || e.repeat) return;
 			if (e.shiftKey && !e.metaKey && !e.ctrlKey) return;
 			const t = e.target as HTMLElement | null;
 			if (
@@ -2258,10 +2258,11 @@ function DockOverlay({
 				((t.tagName === "INPUT" && (t as HTMLInputElement).type !== "range") ||
 				t.tagName === "TEXTAREA" ||
 				t.isContentEditable ||
-				t.closest("button"))
+				t.closest("button, [role=dialog], [data-lh-menu], [data-demo-expanded=true]"))
 			)
 				return;
 			e.preventDefault();
+			e.stopPropagation();
 			void finishDictation().then(() => {
 				expandAndRevealRef.current();
 			});

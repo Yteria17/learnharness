@@ -93,3 +93,26 @@ L’ancien fichier `chatgpt-credentials.enc.json` est conservé mais n’est ni 
 ni déchiffré automatiquement. Une reconnexion est nécessaire sur chaque ordinateur
 mis à jour depuis notre version chiffrée. Ces deux fichiers et les clés API restent
 exclus des transferts SSH. Les conversations et préférences sont conservées.
+
+
+## Confort de lecture et démos — 0.3.7-fork.2
+
+Le résumé de raisonnement fourni par le modèle est ouvert par défaut et ne se
+referme plus automatiquement après une réponse. Le chevron permet de le replier.
+L’app indique explicitement quand le modèle n’a pas fourni de résumé ; elle ne
+reconstitue pas de raisonnement absent.
+
+Entrée valide la réponse depuis les options, le curseur de confiance ou les
+champs de réponse/réflexion. Maj+Entrée conserve le saut de ligne. Un événement
+déjà traité n’est pas envoyé une deuxième fois ; les panneaux repliés et les
+fenêtres de dialogue ne déclenchent plus les mêmes raccourcis en parallèle.
+
+Chaque démo interactive possède un bouton d’agrandissement et une sortie par
+le même bouton ou Échap. Le même iframe reste monté : ses curseurs, simulations
+et réglages sont conservés. Le mode agrandi permet de faire défiler les démos
+hautes. Le plein écran natif est utilisé quand disponible, sinon la démo occupe
+la fenêtre de l’app.
+
+Les nouvelles démos sont demandées en thème sombre. Les anciennes démos claires
+sont adaptées automatiquement, sans inverser celles qui sont déjà sombres.
+Un choix manuel d’inversion existant reste prioritaire.

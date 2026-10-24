@@ -492,7 +492,8 @@ describe("artifact chrome — scrollbar, invert toggles, downloads (release poli
 		assert.match(html, /scrolling="no"/, "no internal scrollbar — the wheel chains to the session");
 		assert.match(html, /toggle-invert-demo-brightness/, "the invert switch (house Toggle)");
 		assert.match(html, /data-testid="demo-download"/);
-		assert.ok(!html.includes("hue-rotate"), "inversion is OFF by default — a manual toggle only");
+		assert.ok(html.includes("hue-rotate"), "legacy light demos start with dark adaptation");
+		assert.match(html, /data-testid="demo-fullscreen"/, "fullscreen is available on every demo");
 		assert.match(html, /interactive demo/, "the kind label lives in the caption header");
 		assert.match(html, /Wave interference/, "the title rides beside the kind label");
 	});

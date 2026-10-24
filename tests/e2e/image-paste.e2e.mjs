@@ -286,4 +286,75 @@ describe("composer image paste (e2e)", () => {
 		assert.deepEqual(Buffer.from(await (await fetch(`${BASE}/api/documents/${id}`)).arrayBuffer()),bytes);
 	});
 
+	async function fixtureSession(content, extraMessages = []) {
+		const id = `e2e_controls_${crypto.randomUUID().replaceAll("-", "")}`;
+		const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+		fs.mkdirSync(path.join(dataDir, "chats"), {recursive:true});
+		fs.writeFileSync(path.join(dataDir,"chats",id+".json"), JSON.stringify({id,version:2,title:"UI controls test",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[{id:"initial",role:"user",content:"Explique un exemple",timestamp:0},{id:"assistant",role:"assistant",content,api:"openai-completions",provider:"openrouter",model:SLOT.model.id,usage,stopReason:"toolUse",timestamp:1},...extraMessages]}));
+		await page.goto(`${BASE}/chat/${id}`, {waitUntil:"networkidle2"});
+		return id;
+	}
+
+	it("agent reasoning is visible, stays open, and can be collapsed manually",async()=>{
+		await fixtureSession([{type:"thinking",thinking:"Résumé de raisonnement disponible."},{type:"text",text:"Voici la réponse."}]);
+		await page.waitForSelector('[data-testid="agent-reasoning-content"]',{visible:true});
+		assert.ok(await page.$eval('[data-testid="agent-reasoning-content"]',el=>el.textContent.includes("Résumé de raisonnement disponible.")));
+		await page.click('[data-testid="agent-reasoning"] button');
+		await page.waitForSelector('[data-testid="agent-reasoning-content"]',{hidden:true});
+		await page.click('[data-testid="agent-reasoning"] button');
+		await page.waitForSelector('[data-testid="agent-reasoning-content"]',{visible:true});
+		await new Promise(resolve=>setTimeout(resolve,1200));
+		assert.ok(await page.$eval('[data-testid="agent-reasoning-content"]',el=>el.getBoundingClientRect().height>0));
+	});
+
+	for(const focus of ["choice","confidence","thinking","body","free","other"]){
+		it(`quiz: Enter submits once with focus on ${focus}`,async()=>{
+			const args=focus==="free"?{question:"Donne un exemple"} : focus==="other"?{question:"Quel sujet ?",options:[{label:"Algèbre"},{label:"Géométrie"}]}:{type:"check",nodeId:"addition",question:"Combien font 2 + 2 ?",options:[{label:"4"},{label:"5"}],explanation:"Deux plus deux font quatre.",correctAnswer:"4"};
+			await fixtureSession([{type:"toolCall",id:"quiz_keyboard",name:["free","other"].includes(focus)?"ask_user_question":"quiz",arguments:args}]);
+			if(focus==="free") {await page.waitForSelector('[data-testid="answer-field"] textarea',{visible:true});await page.type('[data-testid="answer-field"] textarea',"Une réponse libre");}
+			else if(focus==="other") {await page.waitForSelector('[data-testid="other-option"]',{visible:true});await page.click('[data-testid="other-option"]');await page.type('[data-testid="other-option"] input',"Analyse");}
+			else {await page.waitForSelector('[data-testid="question-dock"] [data-kbdrow="0"]',{visible:true});await page.click('[data-testid="question-dock"] [data-kbdrow="0"]');}
+			if(focus==="confidence") await page.focus('[data-testid="confidence-slider"]');
+			if(focus==="thinking") await page.focus('[data-testid="thinking-field"] textarea');
+			if(focus==="body") await page.evaluate(()=>document.activeElement.blur());
+			const requests=[];
+			const intercept=async req=>{
+				if(req.url()===`${BASE}/api/chat`&&req.method()==="POST"){requests.push(JSON.parse(req.postData()));await req.respond({status:503,contentType:"application/json",body:JSON.stringify({error:"Test: no model request"})});}
+				else await req.continue();
+			};
+			await page.setRequestInterception(true);page.on("request",intercept);
+			try{
+				if(focus==="thinking"||focus==="free") {await page.keyboard.down("Shift");await page.keyboard.press("Enter");await page.keyboard.up("Shift");assert.equal(requests.length,0);}
+				await page.keyboard.press("Enter");
+				await page.waitForFunction(()=>document.querySelector('[data-testid="question-dock"]')===null || document.body.textContent.includes("Test: no model request"),{timeout:10000});
+				assert.equal(requests.length,1,"one physical Enter creates one submission");
+				assert.equal(requests[0].input.type,"answer");
+			}finally{page.off("request",intercept);await page.setRequestInterception(false);}
+		});
+	}
+
+	for(const nativeDark of [false,true]){
+		it(`demo: ${nativeDark?"native dark":"legacy light"} opens dark and expands without resetting controls`,async()=>{
+			const html=`<!doctype html><html><head><style>body{background:${nativeDark?"#111318":"#ffffff"};color:${nativeDark?"#eee":"#111"};margin:16px}input{width:200px}</style></head><body><label>Valeur <input id="value" type="range" value="25"></label><output id="result">25</output><script>document.querySelector('input').oninput=e=>document.querySelector('output').textContent=e.target.value;<`+`/script></body></html>`;
+			await fixtureSession([{type:"text",text:"Une démo interactive."}],[{id:"steer_demo_ui",role:"custom",customType:"subagent-steer",display:true,content:"Demo ready",details:{jobId:"demo_ui",kind:"demo",toolCallId:"demo_call",result:{title:"Contrôles persistants",html,tested:true}},timestamp:2}]);
+			await page.waitForSelector('[data-testid="demo-iframe"]');
+			await page.waitForFunction((dark)=>getComputedStyle(document.querySelector('[data-testid="demo-iframe"]')).filter.includes("invert")!==dark,{},nativeDark);
+			const iframe=await page.$('[data-testid="demo-iframe"]');const frame=await iframe.contentFrame();
+			await frame.waitForSelector('#value');
+			await frame.$eval('#value',el=>{el.value="73";el.dispatchEvent(new Event("input",{bubbles:true}));});
+			await page.click('[data-testid="demo-fullscreen"]');
+			await page.waitForSelector('[data-demo-expanded="true"]');
+			assert.equal(await frame.$eval('#result',el=>el.textContent),"73");
+			const box=await (await page.$('[data-testid="demo-card"]')).boundingBox();assert.ok(box.width>1100&&box.height>750);
+			await page.click('[data-testid="demo-fullscreen"]');
+			await page.waitForSelector('[data-demo-expanded="false"]');
+			assert.equal(await frame.$eval('#result',el=>el.textContent),"73");
+			await page.click('[data-testid="demo-fullscreen"]');
+			await page.waitForSelector('[data-demo-expanded="true"]');
+			await frame.focus('#value');await page.keyboard.press("Escape");
+			await page.waitForSelector('[data-demo-expanded="false"]');
+			assert.equal(await frame.$eval('#result',el=>el.textContent),"73");
+		});
+	}
+
 });

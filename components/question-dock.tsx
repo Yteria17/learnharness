@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
-import { useEnterSubmits } from "@/components/enter-submits";
+import { useEnterSubmits, isSubmitEnter, buttonKeepsNativeEnter, OVERLAY_ROOTS } from "@/components/enter-submits";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 import {
@@ -44,8 +44,8 @@ import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-
  * with Submit docked inside it exactly like the chat composer's send.
  *
  * The thinking field is the transfer channel of the whole product (wave-2):
- * never called "optional", Enter makes a NEWLINE (it is for dumping — soon
- * dictated, not typed), submission is the button only, and its size scales
+ * never called "optional". Enter submits, Shift+Enter inserts a newline,
+ * and its size scales
  * with the phase (probing stays quick; teaching invites depth). The
  * "Other…" option is an editable option ROW — circle + inline input,
  * styled like its siblings — so picking Other never displaces thinking.
@@ -365,7 +365,7 @@ function QuestionDockForm({
 			: sel.dontKnow || (sel.otherSelected && other.trim().length > 0) || sel.selected.size > 0;
 
 	const submit = () => {
-		if (!canSubmit || compactionRunning) return;
+		if (compactionRunning || (!canSubmit && !isDictationActive())) return;
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): Enter may arrive while
 		 * a run is live with reasoning still in Deepgram's hands. Stop the
 		 * run, let the last finals land in the target field, and only then
@@ -379,7 +379,7 @@ function QuestionDockForm({
 		void finishDictation().then(doSubmit);
 	};
 	const doSubmit = () => {
-		if (!canSubmit) return;
+		if (qd.mode === "text" ? !answerTextRef.current.trim() : !canSubmit) return;
 		const req: AnswerRequest = {
 			dontKnow: sel.dontKnow,
 			values: [...sel.selected].map((i) => qd.options[i]!.value),
@@ -396,7 +396,7 @@ function QuestionDockForm({
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): the same
 	 * law as the practice dock — dictated answers rarely focus the field.
 	 * Rides submit() so the dictation-flush law is shared, not forked. */
-	useEnterSubmits(submit);
+	useEnterSubmits(submit, active);
 
 	// Selecting Other never clears the thinking field — two channels, the
 	// answer and the reasoning behind it, side by side.
@@ -461,6 +461,7 @@ function QuestionDockForm({
 		if (!active || rowCount === 0) return;
 		const onKeyDown = (e: KeyboardEvent) => {
 			const t = e.target as HTMLElement | null;
+			if (e.defaultPrevented || e.isComposing || e.repeat || t?.closest(OVERLAY_ROOTS)) return;
 			// A TYPING field is where keys mean text (owner round 4): the
 			// thinking/answer fields, search boxes, renames — never a range
 			// input, whose focus after a click or drag must not kill the
@@ -522,8 +523,11 @@ function QuestionDockForm({
 				e.preventDefault();
 				kbdAct(kbdIdx);
 			} else if (e.key === "Enter") {
-				if (kbdIdx === null || !canSubmit) return;
+				const button = t?.closest("button") as HTMLElement | null;
+				if (button && !t?.closest("[data-kbdrow]") && buttonKeepsNativeEnter(button)) return;
+				if (!isSubmitEnter(e) || !canSubmit) return;
 				e.preventDefault();
+				e.stopPropagation();
 				submit();
 			}
 		};
@@ -686,6 +690,7 @@ function QuestionDockForm({
 										setSel((prev) => (prev.otherSelected ? prev : toggleOther(selectMode, prev)));
 									}}
 									onKeyDown={(e) => {
+										if (e.nativeEvent.isComposing || e.repeat) return;
 										// Esc escapes the typing (owner refinement round,
 										// 2026-09-24): focus leaves the input, the row STAYS
 										// selected — deselection is the next Space's job, acting
@@ -838,6 +843,7 @@ function QuestionDockForm({
 								setText(e.target.value);
 							}}
 							onKeyDown={(e) => {
+								if (e.nativeEvent.isComposing || e.repeat) return;
 								// Esc ends dictation (the dictate decisions: click-again
 								// or Esc) — stopPropagation claims it (keyboard wave
 								// A) so the window chain doesn't also abort a turn.
@@ -867,6 +873,7 @@ function QuestionDockForm({
 								setThinking(e.target.value);
 							}}
 							onKeyDown={(e) => {
+								if (e.nativeEvent.isComposing || e.repeat) return;
 								// Esc ends dictation (the dictate decisions: click-again
 								// or Esc) — stopPropagation claims it (keyboard wave
 								// A) so the window chain doesn't also abort a turn.
