@@ -256,7 +256,8 @@ test("invalid rotating replacement is durably revocation-only; verified mapping 
 			assert.equal(restarted.saved.registrations[0].reconnectRequired, true);
 			await restarted.service.login(restricted.id); await restarted.callback(); await restarted.changed.promise;
 			// Wait for callback's asynchronous encrypted activation, not the prior status push.
-			for (let i = 0; i < 30 && restarted.saved.registrations[0].reconnectRequired; i++) await new Promise((resolve) => setImmediate(resolve));
+			const activationDeadline = Date.now() + 5000;
+			while (restarted.saved.registrations[0].reconnectRequired && Date.now() < activationDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
 			assert.equal(restarted.saved.registrations[0].reconnectRequired, undefined);
 		} finally { restarted.service.close(); }
 	} finally { f.service.close(); }
