@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
-import { useEnterSubmits, isSubmitEnter, OVERLAY_ROOTS } from "@/components/enter-submits";
+import { useEnterSubmits, isSubmitEnter, buttonKeepsNativeEnter, OVERLAY_ROOTS } from "@/components/enter-submits";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 import {
@@ -523,6 +523,8 @@ function QuestionDockForm({
 				e.preventDefault();
 				kbdAct(kbdIdx);
 			} else if (e.key === "Enter") {
+				const button = t?.closest("button") as HTMLElement | null;
+				if (button && !t?.closest("[data-kbdrow]") && buttonKeepsNativeEnter(button)) return;
 				if (!isSubmitEnter(e) || !canSubmit) return;
 				e.preventDefault();
 				e.stopPropagation();
