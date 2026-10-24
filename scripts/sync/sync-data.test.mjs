@@ -242,3 +242,14 @@ test('the real Python store exchanges portable documents and images with the JS 
   await synchronize({host:'test',directory:b.directory,transport});
   assert.equal(snapshot(a.directory).revision,snapshot(b.directory).revision);
 });
+
+test('status leaves legacy inline images untouched, and missing references cannot be installed', async(t)=>{
+  const a=fixture(t),server=store();
+  const original=JSON.stringify({id:'old',version:1,messages:[{role:'user',content:[{type:'image',mimeType:'image/png',data:encoded('legacy bytes')}]}]});
+  put(a.directory,'chats/old.json',original);
+  await synchronize({host:'test',directory:a.directory,transport:server.transport,statusOnly:true});
+  assert.equal(fs.readFileSync(path.join(a.directory,'chats/old.json'),'utf8'),original);
+  assert.equal(fs.existsSync(path.join(a.directory,'attachments')),false);
+  const hash='a'.repeat(64);
+  assert.throws(()=>applySnapshot(a.directory,{'chats/broken.json':encoded(JSON.stringify({messages:[{type:'image',attachmentId:hash}]}))},snapshot(a.directory).revision,()=>{}),/Missing attachment/);
+});

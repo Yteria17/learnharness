@@ -60,7 +60,7 @@ Default desktop data directories:
 | Linux | `${XDG_CONFIG_HOME:-~/.config}/LearnHarness/data` |
 
 Use `--data /absolute/path` only for an explicitly chosen alternate profile.
-`status` does not upload or download. It reports the direction of the next sync.
+`status` reads the remote state but does not upload, migrate or replace local data. It estimates the direction of the next sync.
 On a new, empty computer, sync downloads the server's profile. The first computer
 uploads its profile into an empty server. On a previously synchronized computer,
 the tool compares local and remote contents with their last shared revision.

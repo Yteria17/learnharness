@@ -53,7 +53,9 @@ export function migrateImages(directory) {
       const target = path.join(directory, 'attachments', id + '.bin');
       fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
       if (fs.lstatSync(path.dirname(target)).isSymbolicLink()) throw new Error('Symlinks are not supported');
-      if (!fs.existsSync(target)) fs.writeFileSync(target, bytes, { flag: 'wx', mode: 0o600 });
+      if (fs.existsSync(target)) {
+        if (fs.lstatSync(target).isSymbolicLink() || crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex') !== id) throw new Error('Attachment integrity check failed');
+      } else fs.writeFileSync(target, bytes, { flag: 'wx', mode: 0o600 });
       const { data, ...rest } = value;
       return { ...rest, attachmentId: id };
     }
@@ -80,17 +82,19 @@ function assertReferences(files) {
   const check = value => {
     if (Array.isArray(value)) { value.forEach(check); return; }
     if (!value || typeof value !== 'object') return;
-    if (typeof value.attachmentId === 'string' && (!/^[a-f0-9]{64}$/.test(value.attachmentId) || files[`attachments/${value.attachmentId}.bin`] === undefined)) throw new Error('Missing attachment: ' + value.attachmentId);
+    if (value.type === 'image' && typeof value.attachmentId === 'string' && (!/^[a-f0-9]{64}$/.test(value.attachmentId) || files[`attachments/${value.attachmentId}.bin`] === undefined)) throw new Error('Missing attachment: ' + value.attachmentId);
     Object.values(value).forEach(check);
   };
   for (const [name, value] of Object.entries(files)) {
     if (!name.startsWith('chats/') && !name.startsWith('documents/')) continue;
     let parsed; try { parsed = JSON.parse(Buffer.from(value, 'base64').toString('utf8')); } catch { continue; }
+    if (name.startsWith('documents/') && parsed && typeof parsed.attachmentId === 'string' && files[`attachments/${parsed.attachmentId}.bin`] === undefined) throw new Error('Missing document attachment');
     check(parsed);
   }
 }
-export function snapshot(directory) {
-  migrateImages(directory);
+export function snapshot(directory, { migrate = true } = {}) {
+  if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) throw new Error('Symlinks are not supported in the sync profile');
+  if (migrate) migrateImages(directory);
   const files = Object.create(null);
   function walk(current, prefix = '') {
     if (!fs.existsSync(current)) return;
@@ -274,7 +278,7 @@ export async function installLiveSnapshot(files, expected, previous, request) {
 }
 
 async function synchronizeUnlocked({ host, directory, statusOnly = false, transport = remote, ensureClosed = assertAppClosed,
-  capture = async () => snapshot(directory), install = async (files, expected) => applySnapshot(directory, files, expected, ensureClosed), live = false }) {
+  capture = async () => snapshot(directory, { migrate: !statusOnly }), install = async (files, expected) => applySnapshot(directory, files, expected, ensureClosed), live = false }) {
   if (!statusOnly) ensureClosed();
   const local = await capture();
   if (revisionOf(local.files) !== local.revision) throw new Error('Local snapshot failed validation');
