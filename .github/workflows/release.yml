@@ -20,6 +20,7 @@ env:
 
 jobs:
   quality:
+    if: github.repository == 'amosblomqvist/learnharness'
     name: Release gates
     runs-on: ubuntu-24.04
     timeout-minutes: 20

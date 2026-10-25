@@ -68,6 +68,7 @@ declare global {
 			onZoom?: (cb: (factor: number) => void) => () => void;
 			getZoom?: () => Promise<number>;
 			/** Auto-update channel (Wave C, 2026-10-10): "lh:update-status" pushes once a staged update exists. */
+			getUpdateStatus?: () => Promise<{ status: string; version: string | null; message?: string } | null>;
 			onUpdateStatus?: (cb: (status: { status: string; version: string | null }) => void) => () => void;
 			installUpdate?: () => void;
 		};

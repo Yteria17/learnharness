@@ -1,6 +1,6 @@
 {
 	"name": "learnharness",
-	"version": "0.3.7-fork.2",
+	"version": "0.3.8-fork.1",
 	"license": "AGPL-3.0-only",
 	"author": {
 		"name": "Amos Blomqvist",
@@ -64,6 +64,7 @@
 		"react-dom": "^19.2.8",
 		"react-jsx-parser": "^2.4.1",
 		"remark-breaks": "^4.0.0",
+		"semver": "7.8.5",
 		"streamdown": "^2.5.0",
 		"tailwind-merge": "^3.6.0",
 		"tokenlens": "^1.3.1",

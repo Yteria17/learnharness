@@ -23,9 +23,11 @@ export default function UpdateBanner() {
 
 	useEffect(() => {
 		// Absent bridge (browser / dev) → stays hidden forever.
-		return window.lh?.onUpdateStatus?.((s) => {
-			if (s?.status === "downloaded") setReady(s);
-		});
+		let active = true;
+		const receive = (s: UpdateStatus | null) => { if (active && s?.status === "downloaded") setReady(s); };
+		const off = window.lh?.onUpdateStatus?.(receive);
+		void window.lh?.getUpdateStatus?.().then(receive).catch(() => {});
+		return () => { active = false; off?.(); };
 	}, []);
 
 	if (!ready) return null;
@@ -35,15 +37,15 @@ export default function UpdateBanner() {
 			className="fixed right-4 bottom-4 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-3 shadow-lg"
 		>
 			<div className="text-sm">
-				<span className="font-medium">LearnHarness {ready.version ?? "update"} is ready</span>
-				<span className="text-muted-foreground"> — restart to finish installing.</span>
+				<span className="font-medium">LearnHarness {ready.version ?? "update"} est prêt</span>
+				<span className="text-muted-foreground"> — redémarre pour installer la mise à jour.</span>
 			</div>
 			<button
 				type="button"
 				onClick={() => window.lh?.installUpdate?.()}
 				className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent/80"
 			>
-				Restart
+				Redémarrer
 			</button>
 		</div>
 	);

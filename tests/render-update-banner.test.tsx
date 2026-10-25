@@ -49,6 +49,20 @@ describe("update banner (Wave C)", () => {
 		void listeners;
 	});
 
+	it("recovers an update downloaded before the renderer subscribed", async () => {
+		(window as { lh?: unknown }).lh = {
+			onUpdateStatus: () => () => {},
+			getUpdateStatus: async () => ({ status: "downloaded", version: "0.3.8-fork.1" }),
+		};
+		const host = document.createElement("div");
+		document.body.appendChild(host);
+		const root = ReactDOMClient.createRoot(host);
+		flushSync(() => root.render(<UpdateBanner />));
+		await new Promise(r => setTimeout(r, 10));
+		assert.ok(host.innerHTML.includes("0.3.8-fork.1"));
+		root.unmount(); host.remove();
+	});
+
 	it("shows the version + Restart once the downloaded push arrives, and Restart installs", async () => {
 		let pushed: ((s: { status: string; version: string | null }) => void) | null = null;
 		let installed = 0;
@@ -70,7 +84,7 @@ describe("update banner (Wave C)", () => {
 		await new Promise((r) => setTimeout(r, 0));
 		flushSync(() => pushed?.({ status: "downloaded", version: "0.3.1" }));
 		assert.ok(host.innerHTML.includes("0.3.1"), "the version renders");
-		assert.ok(host.innerHTML.includes("Restart"), "the restart affordance renders");
+		assert.ok(host.innerHTML.includes("Redémarrer"), "the restart affordance renders");
 
 		const button = host.querySelector<HTMLButtonElement>("[data-testid='update-banner'] button");
 		assert.ok(button, "restart button exists");

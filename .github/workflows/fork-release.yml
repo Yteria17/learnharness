@@ -1,0 +1,146 @@
+name: Fork release and automatic updates
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this checked version for automatic updates
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+jobs:
+  quality:
+    if: github.repository == 'Yteria17/learnharness'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: {node-version: "26", cache: npm}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: node --test scripts/sync/sync-data.test.mjs
+      - run: python3 -m unittest discover -s scripts/sync -p 'test_*.py'
+      - run: npm run lint
+      - name: Check release tag
+        if: github.event_name == 'push'
+        run: node --input-type=module -e 'import fs from "node:fs"; if(process.env.GITHUB_REF_NAME!=="v"+JSON.parse(fs.readFileSync("package.json")).version)process.exit(1)'
+  package:
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-26, target: mac-arm64, args: "--mac --arm64"}
+          - {os: windows-2025, target: windows-x64, args: "--win --x64"}
+          - {os: ubuntu-24.04, target: linux-x64, args: "--linux --x64"}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run: {shell: bash}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: {node-version: "26", cache: npm}
+      - run: npm ci
+      - name: Native renderer tests
+        run: npx electron --import tsx --test tests/pdf-native-render.test.ts tests/pdf-ops.test.ts tests/svg-native-render.test.ts tests/browser-service.test.ts
+        env: {NODE_ENV: test, ELECTRON_RUN_AS_NODE: "1"}
+      - run: npm run build
+      - run: node scripts/smoke-provider-runtime.mjs
+      - run: node scripts/build-server.mjs
+      - run: node scripts/smoke-server.mjs --electron
+      - name: Package fork without upstream publishing
+        run: npx electron-builder ${{ matrix.args }} --publish never --config electron-builder.local.yml
+        env: {CSC_IDENTITY_AUTO_DISCOVERY: "false"}
+      - name: Verify packaged providers
+        run: |
+          case "$RUNNER_OS" in
+            macOS) app="dist/mac-arm64/LearnHarness.app/Contents"; payload="$app/Resources/server/standalone"; runtime="$app/MacOS/LearnHarness" ;;
+            Windows) payload="dist/win-unpacked/resources/server/standalone"; runtime="dist/win-unpacked/LearnHarness.exe" ;;
+            Linux) payload="dist/linux-unpacked/resources/server/standalone"; runtime="dist/linux-unpacked/learnharness" ;;
+          esac
+          node scripts/smoke-provider-runtime.mjs --standalone "$payload" --runtime "$runtime"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-installer-${{ matrix.target }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.blockmap
+  sign:
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: {node-version: "26"}
+      - uses: actions/download-artifact@v8
+        with: {pattern: fork-installer-*, merge-multiple: true, path: release}
+      - name: Sign and verify immutable update packages
+        run: node scripts/updates/sign-release.mjs release
+        env:
+          LH_UPDATE_SIGNING_KEY: ${{ secrets.LH_UPDATE_SIGNING_KEY }}
+      - uses: actions/upload-artifact@v7
+        with: {name: fork-signed-release, path: release/*, retention-days: 30}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fork-update-metadata
+          path: |
+            release/signed-update.json
+            release/signed-update.json.sig
+  update-smoke:
+    needs: sign
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-26, target: mac-arm64}
+          - {os: windows-2025, target: windows-x64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: {node-version: "26", cache: npm}
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with: {name: "fork-installer-${{ matrix.target }}", path: release}
+      - uses: actions/download-artifact@v8
+        with: {name: fork-update-metadata, path: release}
+      - name: Exercise real installer and detached update helper
+        run: node scripts/updates/smoke-install.mjs release
+  publish:
+    needs: update-smoke
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: {name: fork-signed-release, path: release}
+      - name: Publish complete fork release
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          node -p 'JSON.parse(require("node:fs").readFileSync("package.json")).version' > "$RUNNER_TEMP/version"
+          version=$(cat "$RUNNER_TEMP/version")
+          tag="v$version"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > "$RUNNER_TEMP/draft" 2>/dev/null; then
+            test "$(cat "$RUNNER_TEMP/draft")" = true || { echo "Refusing to replace a published release"; exit 1; }
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "LearnHarness $version" --notes "Version du fork avec synchronisation SSH, ChatGPT et mises à jour vérifiées."
+          fi
+          gh release upload "$tag" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest

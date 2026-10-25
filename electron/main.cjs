@@ -431,35 +431,18 @@ function createWindow(url) {
  * lights, is impossible without rebuilding the window). */
 const ZOOM_LADDER = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
-/* ── Auto-update (Wave C, owner 2026-10-10: silent download + restart ─────
- * banner; checks at startup + every 24h) ─────────────────────────────────
- *
- * Feed: GitHub Releases (electron-builder.yml publish → app-update.yml,
- * baked + signed into the bundle). macOS needs the app signed (it is —
- * Developer ID) and updates ride the zip target (Squirrel.Mac); blockmaps
- * give differential downloads for free. Windows uses NSIS; Linux uses
- * AppImage or DebUpdater (6.8.9 supports deb; installation can request
- * administrator permission via the package manager — owner 2026-10-11).
- *
- * Hard rules:
- *  - DEV NEVER UPDATES: !app.isPackaged skips the updater entirely — the
- *    dev world runs `next dev` and has no signed bundle.
- *  - THE UPDATER CAN NEVER TAKE THE APP DOWN: every event and check is
- *    caught and logged (feed down, disk full, bad signature — all just
- *    log lines; the app keeps working, update or no update).
- *  - LH_UPDATE_FEED (env): overrides the baked GitHub feed with a generic
- *    local server — the pre-release verification drill (serve
- *    latest-mac.yml + zip + blockmap from any localhost HTTP dir and
- *    watch a real installed copy find/download/restart). Test-only seam.
- *
- * Install path: the downloaded update applies on quit (autoInstallOnAppQuit
- * — Squirrel.Mac stages natively and swaps on relaunch). The renderer
- * banner asks for an immediate restart via "lh:update-install"; we kill
- * the child server FIRST — deterministic ordering: the server lives
- * inside the .app bundle Squirrel is about to replace (extraResources),
- * and before-quit alone would race the swap. */
-const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-let autoUpdater = null; // electron-updater's, packaged builds only
+/* Signed updates from this fork only. Check at startup and every four hours;
+ * download in the background, install after the server stops and SSH sync ends.
+ * The standalone helper verifies the signature/hash again before replacing
+ * the bundle (Mac) or starting the silent NSIS installer (Windows).
+ * Development and Linux builds leave installation to the user. */
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+let autoUpdater = null;
+
+function automaticUpdatesEnabled() {
+	try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR(), "settings.json"), "utf8")).general?.autoUpdate !== false; }
+	catch { return true; } // Missing settings use the factory default.
+}
 
 function broadcastUpdateStatus(status) {
 	for (const win of BrowserWindow.getAllWindows()) {
@@ -473,6 +456,7 @@ function broadcastUpdateStatus(status) {
 
 function checkForUpdates({ manual = false } = {}) {
 	if (!autoUpdater) return;
+	if (!manual && !automaticUpdatesEnabled()) return;
 	autoUpdater
 		.checkForUpdates()
 		.then((result) => {
@@ -495,36 +479,14 @@ function installUpdateNow() {
 }
 
 function setupAutoUpdater() {
-	if (!app.isPackaged) {
-		log("auto-update: dev build — updater disabled");
-		return;
-	}
+	if (!app.isPackaged || !["darwin", "win32"].includes(process.platform)) return;
 	try {
-		autoUpdater = require("electron-updater").autoUpdater;
-	} catch (err) {
-		log(`auto-update: electron-updater unavailable (${err?.message ?? err}) — updates disabled`);
-		return;
-	}
-	const feed = process.env.LH_UPDATE_FEED;
-	if (feed) {
-		autoUpdater.setFeedURL({ provider: "generic", url: feed });
-		log(`auto-update: LH_UPDATE_FEED override → ${feed}`);
-	}
-	autoUpdater.autoDownload = true;
-	autoUpdater.autoInstallOnAppQuit = true;
-	// Route every updater log line through the shell's own log (userData/
-	// logs/main.log) — feed failures must be diagnosable after the fact.
-	autoUpdater.logger = {
-		info: (m) => log(`updater: ${m}`),
-		warn: (m) => log(`updater warn: ${m}`),
-		debug: (m) => {}, // too chatty for the persistent log
-		error: (m) => log(`updater error: ${m}`),
-	};
-	autoUpdater.on("update-downloaded", (info) => {
-		log(`update downloaded: ${info?.version} — banner shown`);
-		broadcastUpdateStatus({ status: "downloaded", version: info?.version ?? null });
-	});
-	autoUpdater.on("error", (err) => log(`updater error: ${err?.message ?? err}`));
+		const { ForkUpdater } = require("./fork-updater.cjs");
+		const appPath = process.platform === "darwin" ? path.resolve(process.resourcesPath, "../..") : process.execPath;
+		autoUpdater = new ForkUpdater({ version: app.getVersion(), userData: app.getPath("userData"), appPath, runtime: process.execPath, log });
+		autoUpdater.on("status", status => { log(`update: ${status.status}${status.version ? " " + status.version : ""}`); broadcastUpdateStatus(status); });
+		log("auto-update: signed releases from Yteria17/learnharness");
+	} catch (error) { log(`auto-update unavailable: ${error.message}`); }
 }
 
 function zoomStep(win, dir) {
@@ -628,10 +590,13 @@ async function main() {
 			});
 			return result.response === 0 ? "retry" : "quit";
 		},
-		finish: () => {
+		finish: async () => {
+			if (autoUpdater?.isReady() && (updateInstallRequested || (autoUpdater.autoInstallOnAppQuit && automaticUpdatesEnabled()))) {
+				try { await autoUpdater.install({ relaunch: updateInstallRequested || restartRequested }); }
+				catch (error) { log(`update installation failed: ${error.message}`); if (updateInstallRequested || restartRequested) app.relaunch(); }
+			} else if (restartRequested) app.relaunch();
 			quitReady = true;
-			if (updateInstallRequested && autoUpdater) autoUpdater.quitAndInstall();
-			else { if (restartRequested) app.relaunch(); app.quit(); }
+			app.quit();
 		},
 	});
 
@@ -712,7 +677,13 @@ async function main() {
 	// interval fire after it below. setupAutoUpdater's contract: failures
 	// are log lines — this can never block boot.
 	setupAutoUpdater();
-	ipcMain.on("lh:update-install", () => installUpdateNow());
+	ipcMain.on("lh:update-install", (event) => {
+		if (trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) && trustedSender(event, new URL(url).origin, BrowserWindow) && autoUpdater?.isReady()) installUpdateNow();
+	});
+	ipcMain.handle("lh:update:status", (event) => {
+		if (!trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) || !trustedSender(event, new URL(url).origin, BrowserWindow)) return null;
+		return autoUpdater?.status() ?? null;
+	});
 
 	// Sidebar-at-narrow-window (owner, 2026-09-17): the renderer auto-closes
 	// the sidebar below SIDEBAR_AUTOCLOSE (928px); opening it again at that

@@ -79,7 +79,7 @@ const DialogContext = createContext<{ open: (section?: string, row?: string) => 
 /** The auto-update row's hint (tooltip wave): honest user language — no
  *  stream vocabulary. Exported for the copy pin (tooltip-mechanism test). */
 export const LANGUAGE_HINT = "Language the agents write in: replies, questions, and generated content";
-export const AUTO_UPDATE_HINT = "Automatic updates arrive in an upcoming release";
+export const AUTO_UPDATE_HINT = "Download verified updates from your fork automatically; install when the app closes";
 
 export function SettingsDialogProvider({
 	children,
