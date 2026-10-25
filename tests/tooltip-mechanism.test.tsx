@@ -46,7 +46,7 @@ describe("subtlety round pins (owner 2026-09-25)", () => {
 
 describe("spot-pins: the dev-speak cull (owner copy review at merge)", () => {
 	it("the auto-update hint is honest user language — no stream jargon", () => {
-		assert.equal(AUTO_UPDATE_HINT, "Automatic updates arrive in an upcoming release");
+		assert.equal(AUTO_UPDATE_HINT, "Download verified updates from your fork automatically; install when the app closes");
 		assert.ok(!AUTO_UPDATE_HINT.includes("wave"), "no stream vocabulary");
 	});
 });

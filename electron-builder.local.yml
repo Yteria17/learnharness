@@ -7,5 +7,5 @@ mac:
   identity: '-'
   notarize: false
   hardenedRuntime: false
-# A personal build must not install upstream updates over local changes.
+# Updates use the fork updater with a pinned Ed25519 key, not upstream feeds.
 publish: null

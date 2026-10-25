@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld("lh", {
 		return () => ipcRenderer.removeListener("lh:zoom", listener);
 	},
 	getZoom: () => ipcRenderer.invoke("lh:zoom:get"),
+	getUpdateStatus: () => ipcRenderer.invoke("lh:update:status"),
 	onUpdateStatus: (cb) => {
 		const listener = (_event, status) => cb(status);
 		ipcRenderer.on("lh:update-status", listener);

@@ -337,9 +337,10 @@ for (const holdVerification of [false, true]) test(`invalid rotating replacement
 	} finally { f.service.close(); }
 });
 
-test("observed file write failure invalidates all work; status, consent and resume cannot reload stale credentials or repair authority", async () => {
+test("observed file write failure invalidates all work; status, consent and resume cannot reload stale credentials or repair authority", { timeout: 10000 }, async () => {
 	let lost = false, reads = 0; const pushes: any[] = [];
-	const f = await loggedIn({ read: () => { reads++; }, write: async () => { if (lost) throw Object.assign(new Error("storage"), { code: "storage" }); }, change: (push) => pushes.push(push) });
+	let reconnectFinished: ReturnType<typeof deferred<void>> | undefined;
+	const f = await loggedIn({ read: () => { reads++; }, write: async () => { if (lost) throw Object.assign(new Error("storage"), { code: "storage" }); }, change: (push) => { pushes.push(push); if (reconnectFinished && !push.status.pending) reconnectFinished.resolve(); } });
 	try {
 		await f.service.lease(false); const epoch = f.service.stamp().epoch;
 		lost = true;
@@ -351,8 +352,9 @@ test("observed file write failure invalidates all work; status, consent and resu
 		await assert.rejects(f.service.lease(false));
 		assert.equal((await f.service.status()).accounts[0].connected, false);
 		assert.equal(reads, 1, "a recovered disk never causes a stale credential reload");
+		reconnectFinished = deferred();
 		await f.service.login(f.saved.activeId); await f.callback();
-		for (let i = 0; i < 100 && (await f.service.status()).pending; i++) await new Promise((resolve) => setImmediate(resolve));
+		await reconnectFinished.promise;
 		assert.equal((await f.service.status()).accounts[0].connected, true, "verified login plus durable save can explicitly reconnect");
 	} finally { f.service.close(); }
 });
