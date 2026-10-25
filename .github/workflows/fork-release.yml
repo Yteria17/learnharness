@@ -28,6 +28,7 @@ jobs:
       - run: npm test
       - run: node --test scripts/sync/sync-data.test.mjs
       - run: python3 -m unittest discover -s scripts/sync -p 'test_*.py'
+      - run: python3 -m unittest discover -s ops/upstream-watch -p 'test_*.py'
       - run: npm run lint
       - name: Check release tag
         if: github.event_name == 'push'
@@ -71,7 +72,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: fork-installer-${{ matrix.target }}
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: error
           path: |
             dist/*.dmg
@@ -94,13 +95,13 @@ jobs:
         env:
           LH_UPDATE_SIGNING_KEY: ${{ secrets.LH_UPDATE_SIGNING_KEY }}
       - uses: actions/upload-artifact@v7
-        with: {name: fork-signed-release, path: release/*, retention-days: 30}
-      - uses: actions/upload-artifact@v7
         with:
           name: fork-update-metadata
           path: |
             release/signed-update.json
             release/signed-update.json.sig
+            release/SHA256SUMS.txt
+          retention-days: 7
   update-smoke:
     needs: sign
     strategy:
@@ -123,15 +124,22 @@ jobs:
       - name: Exercise real installer and detached update helper
         run: node scripts/updates/smoke-install.mjs release
   publish:
+    name: Verify assembled release and publish when requested
     needs: update-smoke
-    if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-24.04
     permissions: {contents: write}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
-        with: {name: fork-signed-release, path: release}
+        with: {pattern: fork-installer-*, merge-multiple: true, path: release}
+      - uses: actions/download-artifact@v8
+        with: {name: fork-update-metadata, path: release}
+      - uses: actions/setup-node@v7
+        with: {node-version: "26"}
+      - name: Verify reconstructed release assets
+        run: node scripts/updates/verify-release.mjs release
       - name: Publish complete fork release
+        if: github.event_name == 'push' || inputs.publish
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           node -p 'JSON.parse(require("node:fs").readFileSync("package.json")).version' > "$RUNNER_TEMP/version"
