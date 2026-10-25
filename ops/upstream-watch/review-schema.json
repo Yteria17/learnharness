@@ -1,0 +1,13 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["analysis_complete", "decision", "summary", "reason", "risks", "behavior_preserving", "fork_features_preserved", "no_security_or_data_change"],
+  "properties": {
+    "analysis_complete": {"type":"boolean"},
+    "decision": {"type":"string", "enum":["simple","review"]},
+    "summary": {"type":"string"}, "reason": {"type":"string"},
+    "risks": {"type":"array", "items":{"type":"string"}},
+    "behavior_preserving": {"type":"boolean"},
+    "fork_features_preserved": {"type":"boolean"},
+    "no_security_or_data_change": {"type":"boolean"}
+  }
+}
