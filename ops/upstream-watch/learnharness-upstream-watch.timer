@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily LearnHarness upstream review at 09:00 Europe/Paris
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Europe/Paris
+Persistent=true
+AccuracySec=1s
+Unit=learnharness-upstream-watch.service
+
+[Install]
+WantedBy=timers.target

@@ -32,6 +32,7 @@ jobs:
       - run: npm test
       - run: node --test scripts/sync/sync-data.test.mjs
       - run: python3 -m unittest discover -s scripts/sync -p 'test_*.py'
+      - run: python3 -m unittest discover -s ops/upstream-watch -p 'test_*.py'
       - run: npm run lint
 
   standalone:
