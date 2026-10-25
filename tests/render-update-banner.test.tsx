@@ -57,9 +57,12 @@ describe("update banner (Wave C)", () => {
 		const host = document.createElement("div");
 		document.body.appendChild(host);
 		const root = ReactDOMClient.createRoot(host);
+		(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 		await React.act(async () => { root.render(<UpdateBanner />); });
 		assert.ok(host.innerHTML.includes("0.3.8-fork.1"));
-		root.unmount(); host.remove();
+		await React.act(async () => { root.unmount(); });
+		delete (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT;
+		host.remove();
 	});
 
 	it("shows the version + Restart once the downloaded push arrives, and Restart installs", async () => {

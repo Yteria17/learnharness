@@ -339,7 +339,7 @@ for (const holdVerification of [false, true]) test(`invalid rotating replacement
 
 test("observed file write failure invalidates all work; status, consent and resume cannot reload stale credentials or repair authority", { timeout: 10000 }, async () => {
 	let lost = false, reads = 0; const pushes: any[] = [];
-	let reconnectFinished: ReturnType<typeof deferred> | undefined;
+	let reconnectFinished: ReturnType<typeof deferred<void>> | undefined;
 	const f = await loggedIn({ read: () => { reads++; }, write: async () => { if (lost) throw Object.assign(new Error("storage"), { code: "storage" }); }, change: (push) => { pushes.push(push); if (reconnectFinished && !push.status.pending) reconnectFinished.resolve(); } });
 	try {
 		await f.service.lease(false); const epoch = f.service.stamp().epoch;
