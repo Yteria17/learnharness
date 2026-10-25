@@ -57,8 +57,7 @@ describe("update banner (Wave C)", () => {
 		const host = document.createElement("div");
 		document.body.appendChild(host);
 		const root = ReactDOMClient.createRoot(host);
-		flushSync(() => root.render(<UpdateBanner />));
-		await new Promise(r => setTimeout(r, 10));
+		await React.act(async () => { root.render(<UpdateBanner />); });
 		assert.ok(host.innerHTML.includes("0.3.8-fork.1"));
 		root.unmount(); host.remove();
 	});
