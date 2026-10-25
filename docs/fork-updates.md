@@ -48,6 +48,11 @@ on Mac or on helper failure. Update/check errors go to the desktop log. Mac need
 write access to the installed app's parent directory. OS permission prompts still
 apply. A working internet connection is needed to discover/download a new release.
 
+Intermediate installer artifacts are kept for seven days. Signing metadata and
+checksums are stored separately; publication reuses the original platform
+artifacts instead of uploading a second full copy. Published release assets
+remain available independently of the Actions artifact retention period.
+
 ## Validation
 
 `tests/fork-updater.test.ts` covers signature tampering, fork isolation, manifest

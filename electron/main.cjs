@@ -27,6 +27,8 @@
 const { app, BrowserWindow, Menu, ipcMain, session, shell, dialog } = require("electron");
 const { createChatGPT, fileStore } = require("./chatgpt.cjs");
 const { attachChatGPTChild, trustedSender, chatGPTControl } = require("./chatgpt-ipc.cjs");
+const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cjs");
+const { attachSubscriptionChild, subscriptionControl } = require("./subscription-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { createDesktopSync, createSyncShutdown, syncControl } = require("./sync.cjs");
 const { randomBytes } = require("node:crypto");
@@ -140,6 +142,8 @@ let quitting = false;
 let quitReady = false;
 let restartRequested = false;
 let updateInstallRequested = false;
+let subscriptions = null;
+let subscriptionChild = null;
 // Per-launch request capability, never OAuth tokens and never renderer state.
 let desktopAPISecret = null;
 const trustedAppWindows = new Set();
@@ -202,9 +206,11 @@ function startServer(port) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			process.execPath,
-			// The title guard keeps Next's process.title write from checking
-			// the child in as a Dock app on macOS (server-title-guard.cjs).
-			["--require", path.join(__dirname, "server-title-guard.cjs"), serverEntry()],
+			// Only the macOS backend needs this: Next's native title setter
+			// otherwise checks this Node-mode process in as a foreground app.
+			process.platform === "darwin"
+				? ["--require", path.join(process.resourcesPath, "server-title-guard.cjs"), serverEntry()]
+				: [serverEntry()],
 			{
 				cwd: path.dirname(serverEntry()),
 				env: {
@@ -229,6 +235,7 @@ function startServer(port) {
 		child.on("message", (message) => {
 			if (message?.channel === "lh:sync" && message.op === "dirty") desktopSync?.requestSoon();
 		});
+		subscriptionChild = attachSubscriptionChild(child, subscriptions);
 		const fwd = (buf) => buf.toString().trimEnd().split("\n").forEach((l) => l && log(`server: ${l}`));
 		child.stdout.on("data", fwd);
 		child.stderr.on("data", fwd);
@@ -237,7 +244,10 @@ function startServer(port) {
 			serverProcess = null;
 			chatgptChild?.dispose();
 			chatgptChild = null;
+			subscriptionChild?.dispose();
+			subscriptionChild = null;
 			chatgpt?.close();
+			subscriptions?.close();
 		});
 		resolve(child);
 	});
@@ -262,6 +272,7 @@ function waitUntilUp(url, tries = 150) {
 
 function killServer() {
 	chatgpt?.close();
+	subscriptions?.close();
 	if (!serverProcess) return;
 	const child = serverProcess;
 	serverProcess = null;
@@ -278,6 +289,7 @@ function killServer() {
 /** Do not read or replace a profile until every writer in the server has exited. */
 function stopServerForSync() {
 	chatgpt?.close();
+	subscriptions?.close();
 	const child = serverProcess;
 	if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
 	return new Promise((resolve, reject) => {
@@ -561,6 +573,7 @@ async function main() {
 	let finishWithSync = null;
 	app.on("window-all-closed", () => {
 		chatgpt?.pause();
+		subscriptions?.pause();
 		// macOS convention: the app stays resident, reactivated from the Dock.
 		if (process.platform !== "darwin") app.quit();
 	});
@@ -639,6 +652,16 @@ async function main() {
 				for (const win of BrowserWindow.getAllWindows()) win.webContents.send("lh:chatgpt:changed");
 			},
 		});
+		subscriptions = createSubscriptions({
+			directory: app.getPath("userData"),
+			loadSDK: () => loadSubscriptionSDK(path.dirname(serverEntry())),
+			openExternal: (target) => shell.openExternal(target),
+			onChange: (snapshot) => {
+				subscriptionChild?.send(snapshot);
+				for (const win of BrowserWindow.getAllWindows()) win.webContents.send("lh:subscriptions:changed");
+			},
+		});
+		await subscriptions.ready;
 		log(`starting server: ${serverEntry()}`);
 		log(`data dir: ${DATA_DIR()}${fs.existsSync(AUTH_FILE()) ? " · auth.json: present" : " · auth.json: ABSENT (no BYOK keys yet)"}`);
 		await startServer(new URL(url).port);
@@ -668,6 +691,15 @@ async function main() {
 			restartRequested = true;
 			setImmediate(() => app.quit());
 		});
+	});
+
+	ipcMain.handle("lh:subscriptions:control", async (event, command) => {
+		if (!trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");
+		if (!subscriptions || !serverProcess?.connected) {
+			if (command?.op === "status") return [];
+			throw new Error("Subscription sign-in requires the desktop app's private server connection.");
+		}
+		return subscriptionControl(command, subscriptions);
 	});
 
 	installMenu();
@@ -702,7 +734,7 @@ async function main() {
 	});
 	app.on("activate", () => {
 		desktopSync?.requestSoon();
-		if (BrowserWindow.getAllWindows().length === 0) { chatgpt?.resume(); createWindow(url); }
+		if (BrowserWindow.getAllWindows().length === 0) { chatgpt?.resume(); subscriptions?.resume(); createWindow(url); }
 	});
 	createWindow(url);
 	log(`window open: ${url}`);

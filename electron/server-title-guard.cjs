@@ -1,21 +1,24 @@
 /**
- * server-title-guard.cjs — preloaded (--require) into the server child.
+ * Preloaded only into the packaged macOS backend, before Next starts.
  *
- * Next's startServer sets process.title = "next-server (vX)". On macOS,
- * libuv applies a title through private LaunchServices calls, and that
- * checks the process in as a FOREGROUND app: because the child runs this
- * app's own binary (ELECTRON_RUN_AS_NODE), the Dock grows a second,
- * window-less "LearnHarness" tile with the generic exec icon that bounces
- * at every launch. Keeping the title in JS only (never handed to libuv)
- * leaves the child an invisible background process. Nothing reads the
- * OS-level title — `ps` keeps showing the binary path.
+ * Next assigns process.title. In Electron's Node mode on macOS, the native
+ * setter checks in with Launch Services using the main app bundle, creating
+ * an unwanted foreground application registration. Keep title writes in JS
+ * instead: the native process name stays unchanged while JS can read back
+ * its assigned title. This deliberately does not emulate native truncation
+ * or every coercion detail; assignments use String(value).
+ *
+ * Explicit launch arguments (not NODE_OPTIONS) keep the full-Electron browser
+ * helper untouched. Node-mode fork descendants can inherit this preload.
  */
-let title = process.title;
-Object.defineProperty(process, "title", {
-	configurable: true,
-	enumerable: true,
-	get: () => title,
-	set: (value) => {
-		title = String(value);
-	},
-});
+if (process.platform === "darwin" && process.env.ELECTRON_RUN_AS_NODE === "1" && process.env.LH_DESKTOP_SERVER === "1") {
+	let title = process.title;
+	Object.defineProperty(process, "title", {
+		configurable: true,
+		enumerable: true,
+		get: () => title,
+		set: (value) => {
+			title = String(value);
+		},
+	});
+}
