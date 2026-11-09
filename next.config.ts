@@ -1,10 +1,16 @@
+import { readFileSync } from "node:fs";
 import type { NextConfig } from "next";
+import { MAX_IMPORT_BODY_BYTES } from "./lib/notes-import-limits.ts";
+
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string; homepage: string };
 
 const nextConfig: NextConfig = {
-	// Image messages and bounded attachment batches expand in base64. Next's
-	// default 10 MiB proxy buffer truncates those requests before the route
-	// validates them; match the bounded SSH wire envelope instead.
-	experimental: { proxyClientMaxBodySize: 96 * 1024 * 1024 },
+	// Public build metadata only; no new runtime Electron version API.
+	env: { LH_VERSION: pkg.version, LH_HOMEPAGE: pkg.homepage },
+	// The fork's image/attachment batches and the upstream import allowance
+	// share this proxy buffer. 96 MiB covers bounded SSH sync envelopes; the
+	// import route still enforces its own 25 MiB file/body limits.
+	experimental: { proxyClientMaxBodySize: Math.max(96 * 1024 * 1024, MAX_IMPORT_BODY_BYTES) },
 	// Desktop target (Electron wrapper, 2026-09-17): standalone output = a
 	// self-contained .next/standalone/server.js the Electron shell spawns
 	// on 127.0.0.1. Harmless for plain web deploys (extra build output).
@@ -47,6 +53,9 @@ const nextConfig: NextConfig = {
 		"*": [
 			"**/data/**/*",
 			"auth.json",
+			"chatgpt-credentials.json*",
+			"github-copilot-credentials.json*",
+			"xai-credentials.json*",
 			".env*",
 		],
 	},
@@ -74,6 +83,11 @@ const nextConfig: NextConfig = {
 			// npm installs only the current platform's binary, so this glob
 			// resolves to exactly one Skia binary per build.
 			"node_modules/@napi-rs/canvas-*/**/*",
+			// Pi-compatible image resizing runs in an unbundled worker. Photon
+			// loads its colocated WASM through Node, also in packaged Electron.
+			"src/agent/image-processing/*.mjs",
+			"src/agent/image-processing/LICENSE",
+			"node_modules/@silvia-odwyer/photon-node/**/*",
 			// Wave E stage 2: resvg rasterizes visual-maker SVGs natively; same
 			// per-platform-binary story as the canvas above (one per build).
 			"node_modules/@resvg/resvg-js-*/**/*",
@@ -102,6 +116,7 @@ const nextConfig: NextConfig = {
 		"@earendil-works/pi-agent-core",
 		"pdfjs-dist", // sources v0: bundling breaks its node fake-worker path
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
+		"@silvia-odwyer/photon-node", // CJS loads its adjacent WASM from disk
 		"@resvg/resvg-js", // native binding — same
 	],
 };

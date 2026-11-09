@@ -21,7 +21,7 @@ import {
 import { Streamdown } from "streamdown";
 
 import { transformMathDelimiters } from "@/src/core";
-import { streamdownPlugins } from "./message";
+import { streamdownPlugins, streamdownRemend } from "./message";
 import { mdComponents } from "@/components/md-blocks";
 import { Shimmer } from "./shimmer";
 
@@ -181,7 +181,7 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      {children.trim() ? <Streamdown components={mdComponents} plugins={streamdownPlugins}>
+      {children.trim() ? <Streamdown components={mdComponents} plugins={streamdownPlugins} remend={streamdownRemend}>
         {transformMathDelimiters(children)}
       </Streamdown> : <p className="text-xs italic">{isStreaming ? "En attente du résumé de raisonnement…" : "Le modèle n’a pas fourni de résumé de raisonnement pour cette réponse."}</p>}
     </CollapsibleContent>;
