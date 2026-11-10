@@ -1,5 +1,5 @@
 /**
- * The chat-turn services — one named, error-contained seam per turn
+ * The chat-turn services — one named seam per turn
  * responsibility, extracted from the chat-handler so it composes instead of
  * implementing. Each takes its dependencies explicitly (storage ports, the
  * job runner) — no module here imports an adapter.
@@ -29,6 +29,14 @@ import type { ChatStore, GraphStore } from "../core/ports.ts";
 import type { ExtractionPipeline } from "../agent/subagents/extraction.ts";
 import { ModelsNotConfiguredError, ProviderKeyMissingError } from "../core/settings.ts";
 
+/** Distinguish a failed canonical save from later bookkeeping failures. */
+export class TurnPersistenceError extends Error {
+	constructor(cause: unknown) {
+		super("The reply could not be saved.", { cause });
+		this.name = "TurnPersistenceError";
+	}
+}
+
 /**
  * The canonical state write (Wave B, owner-approved 2026-09-26): append the
  * turn's own messages — the agent loop's native history, provider/model/
@@ -48,15 +56,8 @@ import { ModelsNotConfiguredError, ProviderKeyMissingError } from "../core/setti
  * - Plan blocks: one frozen snapshot per successful plan_init call,
  *   idempotent (persist replays are safe).
  *
- * Returns the stamped new messages (usage provenance reads them).
- *
- * THROWS on a failed write (owner-visible bug fix: a turn whose record write
- * failed used to log one line and then settle exactly like a successful one —
- * the reply the learner was watching never reached disk, the turn ended on a
- * clean [DONE], and the refetch that followed showed nothing at all, with no
- * warning anywhere). The throw travels out of the caller's onFinish into the
- * settle seam (pi/ui-stream.ts), which clears the turn's liveness through
- * onSettleFailure and puts the failure on the wire BEFORE the terminal.
+ * Returns the stamped new messages (usage provenance reads them). Throws
+ * TurnPersistenceError on failure so the runner can report it before DONE.
  */
 export function persistTurn(
 	chatStore: ChatStore,
@@ -67,7 +68,7 @@ export function persistTurn(
 ): LhMessage[] {
 	try {
 		const record = chatStore.getChat(chatId);
-		if (!record) return [];
+		if (!record) throw new Error(`Chat not found: ${chatId}`);
 		const stamped: LhMessage[] = [];
 		for (const m of turnMessages.slice(baseCount)) {
 			const message = m as LhMessage;
@@ -90,7 +91,7 @@ export function persistTurn(
 		return stamped;
 	} catch (err) {
 		console.error(`[chat ${chatId}] persist failed:`, err, { isAborted });
-		throw err;
+		throw new TurnPersistenceError(err);
 	}
 }
 

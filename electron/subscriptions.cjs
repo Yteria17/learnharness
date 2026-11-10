@@ -1,7 +1,8 @@
 "use strict";
 const { randomUUID } = require("node:crypto");
+const fs = require("node:fs");
 const path = require("node:path");
-const { createRequire, registerHooks } = require("node:module");
+const { findPackageJSON } = require("node:module");
 const { pathToFileURL } = require("node:url");
 const { PROVIDERS, fileStore, validateCredential, safeHttps, failure } = require("./subscription-store.cjs");
 
@@ -19,19 +20,38 @@ const MESSAGES = {
 	interaction: "This sign-in action is no longer available.",
 };
 function publicError(error) { return MESSAGES[error?.code] ?? MESSAGES.unavailable; }
+/** Match a public export subpath, including `*` wildcard patterns. */
+function packageExport(exports, subpath) {
+	if (!exports) return undefined;
+	if (exports[subpath] !== undefined) return exports[subpath];
+	for (const [key, value] of Object.entries(exports)) {
+		const star = key.indexOf("*");
+		if (star === -1) continue;
+		const prefix = key.slice(0, star), suffix = key.slice(star + 1);
+		if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
+		const middle = subpath.slice(prefix.length, subpath.length - suffix.length);
+		if (typeof value === "string") return value.replace("*", middle);
+		if (value && typeof value === "object" && typeof value.import === "string") {
+			return { ...value, import: value.import.replace("*", middle) };
+		}
+		return value;
+	}
+	return undefined;
+}
 /** Resolve the SAME SDK installation as the standalone server, through public exports. */
 async function loadSubscriptionSDK(baseDirectory) {
-	const resolve = createRequire(path.join(baseDirectory, "package.json"));
 	const load = (id) => {
-		// Pi exports are import-only. Resolve the public export with ESM
-		// conditions, then remove this synchronous, exact-specifier hook
-		// BEFORE evaluation; no private package path or global hook remains.
-		const hook = registerHooks({ resolve(specifier, context, next) {
-			return next(specifier, specifier === id ? { ...context, conditions: [...context.conditions, "import"] } : context);
-		} });
-		let file;
-		try { file = resolve.resolve(id); } finally { hook.deregister(); }
-		return import(pathToFileURL(file).href);
+		// Pi exports are import-only. Locate the package through Node's own
+		// resolver, then read the public export map directly: require.resolve
+		// cannot select an "import" condition.
+		const packageFile = findPackageJSON(id, path.join(baseDirectory, "package.json"));
+		if (!packageFile) throw new Error(`Cannot resolve ${id}`);
+		const pkg = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+		const subpath = id === pkg.name ? "." : `.${id.slice(pkg.name.length)}`;
+		const entry = packageExport(pkg.exports, subpath);
+		const target = typeof entry === "string" ? entry : entry?.import;
+		if (typeof target !== "string") throw new Error(`No import export for ${id}`);
+		return import(pathToFileURL(path.resolve(path.dirname(packageFile), target)).href);
 	};
 	const [sdk, copilot, xai] = await Promise.all([load("@earendil-works/pi-ai"), load("@earendil-works/pi-ai/providers/github-copilot"), load("@earendil-works/pi-ai/providers/xai")]);
 	return { ...sdk, ...copilot, ...xai };
